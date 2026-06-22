@@ -1,0 +1,60 @@
+# User data (NEVER commit)
+/profile.json
+/resume.txt
+/resume.pdf
+/searches.yaml
+/preferences.yaml
+/providers.yaml
+/notifications.yaml
+/credentials.yaml
+*.env
+.env.*
+!.env.example
+
+# Personal package-local search config accidentally carried from private runs.
+# Public repo ships src/jobmatch/config/searches.example.yaml instead.
+src/jobmatch/config/searches.yaml
+
+# Runtime artifacts
+*.db
+/.jobmatch/
+tailored_resumes/
+cover_letters/
+chrome-workers/
+apply-workers/
+apply_logs/
+logs/
+
+# MCP configs (per-machine)
+.mcp*.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code
+.claude/
+
+# Personal config (not committed)
+profiles/
+.venv/
+
+# Internal migration/release planning notes; keep public docs user-facing.
+/TODO.md
+/docs/GITHUB_READINESS_PLAN.md
+/docs/PUBLIC_RELEASE_CHECKLIST.md

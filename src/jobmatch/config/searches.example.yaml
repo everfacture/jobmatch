@@ -1,0 +1,67 @@
+# JobMatch search configuration example
+# Copy to ~/.jobmatch/searches.yaml and edit for your market.
+# Keep this file generic: real searches belong in your private runtime config.
+
+# Search queries — each has a query string and priority tier.
+# Tier 1: highest-signal target roles.
+# Tier 2: adjacent roles worth checking.
+# Tier 3: broader exploratory searches.
+queries:
+  - query: "software engineer"
+    tier: 1
+  - query: "product manager"
+    tier: 1
+  - query: "operations manager"
+    tier: 1
+  - query: "implementation specialist"
+    tier: 2
+  - query: "data analyst"
+    tier: 2
+
+# Locations to search — only include places where you can work or want remote roles.
+locations:
+  - location: "Remote"
+    remote: true
+    label: "Remote"
+  - location: "New York, NY"
+    remote: false
+    label: "New York"
+  - location: "London, UK"
+    remote: false
+    label: "London"
+
+# Location filtering — applied after discovery to job location text.
+# Keep accept_patterns broad enough for your target markets, and reject hard blockers.
+location:
+  accept_patterns:
+    - "Remote"
+    - "Anywhere"
+    - "Work from Home"
+    - "WFH"
+    - "New York"
+    - "NY"
+    - "London"
+    - "United Kingdom"
+    - "UK"
+  reject_patterns:
+    - "US Citizen required"
+    - "Security Clearance required"
+    - "must relocate"
+
+# JobSpy source boards.
+# LinkedIn is the safest default. Other boards may need extra setup or may block bots.
+boards:
+  - linkedin
+
+# Search defaults.
+defaults:
+  results_per_site: 50
+  hours_old: 48
+
+# Negative title keywords to skip before spending enrichment/scoring time.
+exclude_titles:
+  - "intern"
+  - "internship"
+  - "graduate"
+  - "junior"
+  - "fresher"

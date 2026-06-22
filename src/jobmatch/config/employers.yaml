@@ -1,0 +1,24 @@
+# Workday employer registry for JobMatch
+# Users can add their own employers by following this pattern.
+# Find your employer's Workday URL at: https://[company].wd[N].myworkdayjobs.com
+
+# NOTE 2026-05-26: Several UAE employers moved off Workday to other ATS platforms.
+# Removed: Emirates (Taleo/SAP), DP World (Oracle Cloud), ADNOC, Mubadala,
+# Masdar (SmartRecruiters), Etisalat (Taleo), Grab (SmartRecruiters).
+# These employers post on LinkedIn/Indeed/NaukriGulf — covered by JobSpy + Apify.
+
+employers:
+
+  # ── Singapore ──────────────────────────────────────────────────
+  dbs:
+    name: "DBS Bank"
+    tenant: "dbs"
+    site_id: "DBS_Careers"
+    base_url: "https://dbs.wd3.myworkdayjobs.com"
+
+  # ── Global with Gulf offices ──────────────────────────────────
+  visa:
+    name: "Visa"
+    tenant: "visa"
+    site_id: "Visa"
+    base_url: "https://visa.wd5.myworkdayjobs.com"

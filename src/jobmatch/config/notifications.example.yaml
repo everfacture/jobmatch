@@ -1,0 +1,27 @@
+# JobMatch notification configuration example
+# Current code selects notifier from env vars:
+#   JOBMATCH_NOTIFIER=console|file|telegram
+#   JOBMATCH_TELEGRAM_BOT_TOKEN, JOBMATCH_TELEGRAM_CHAT_ID, JOBMATCH_TELEGRAM_THREAD_ID
+# Legacy BOT_TOKEN, CHAT_ID, MESSAGE_THREAD_ID still work.
+
+notifier: console
+
+console:
+  enabled: true
+
+file:
+  enabled: false
+  path_env: JOBMATCH_DIGEST_PATH
+  default_path: "~/.jobmatch/digests/jobmatch-digest.log"
+
+telegram:
+  enabled: false
+  bot_token_env: JOBMATCH_TELEGRAM_BOT_TOKEN
+  chat_id_env: JOBMATCH_TELEGRAM_CHAT_ID
+  message_thread_id_env: JOBMATCH_TELEGRAM_THREAD_ID
+  parse_mode: HTML
+  disable_web_page_preview: true
+
+thresholds:
+  notify_min_score: 8
+  urgent_min_score: 9

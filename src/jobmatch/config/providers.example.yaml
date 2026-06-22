@@ -1,0 +1,52 @@
+# JobMatch AI provider configuration example
+# Copy to ~/.jobmatch/providers.yaml when Level 4 provider config loading lands.
+# Current code reads the env vars directly from ~/.jobmatch/.env.
+
+llm:
+  primary:
+    kind: openai_compatible
+    base_url_env: JOBMATCH_LLM_BASE_URL
+    api_key_env: JOBMATCH_LLM_API_KEY
+    model_env: JOBMATCH_LLM_MODEL
+    default_model: "gpt-4o-mini"
+
+  fallback:
+    kind: openai_compatible
+    base_url_env: JOBMATCH_FALLBACK_LLM_BASE_URL
+    api_key_env: JOBMATCH_FALLBACK_LLM_API_KEY
+    model_env: JOBMATCH_FALLBACK_LLM_MODEL
+    default_model: ""
+
+  extra_body_env: JOBMATCH_LLM_EXTRA_BODY
+  fallback_extra_body_env: JOBMATCH_FALLBACK_LLM_EXTRA_BODY
+  timeout_seconds: 120
+  max_retries: 3
+
+legacy_aliases:
+  # Accepted during migration.
+  primary: [LLM_URL, LLM_API_KEY, LLM_MODEL]
+  fallback: [FALLBACK_LLM_URL, FALLBACK_LLM_API_KEY, FALLBACK_LLM_MODEL]
+  provider_specific: [OPENAI_API_KEY, GEMINI_API_KEY]
+
+examples:
+  openai:
+    JOBMATCH_LLM_BASE_URL: "https://api.openai.com/v1"
+    JOBMATCH_LLM_MODEL: "gpt-4o-mini"
+  openrouter:
+    JOBMATCH_LLM_BASE_URL: "https://openrouter.ai/api/v1"
+    JOBMATCH_LLM_MODEL: "openai/gpt-4o-mini"
+  deepseek:
+    JOBMATCH_LLM_BASE_URL: "https://api.deepseek.com/v1"
+    JOBMATCH_LLM_MODEL: "deepseek-chat"
+  groq:
+    JOBMATCH_LLM_BASE_URL: "https://api.groq.com/openai/v1"
+    JOBMATCH_LLM_MODEL: "llama-3.1-8b-instant"
+  gemini:
+    JOBMATCH_LLM_BASE_URL: "https://generativelanguage.googleapis.com/v1beta/openai"
+    JOBMATCH_LLM_MODEL: "gemini-2.0-flash"
+  lm_studio:
+    JOBMATCH_LLM_BASE_URL: "http://localhost:1234/v1"
+    JOBMATCH_LLM_MODEL: "local-model"
+  ollama:
+    JOBMATCH_LLM_BASE_URL: "http://localhost:11434/v1"
+    JOBMATCH_LLM_MODEL: "llama3.1"

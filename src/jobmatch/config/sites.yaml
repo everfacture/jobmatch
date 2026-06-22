@@ -1,0 +1,217 @@
+# Direct career site registry for JobMatch
+# Users can add their own sites following this pattern.
+# Use {location_encoded} placeholder for location (URL-encoded).
+# Use {query_encoded} placeholder for search terms (URL-encoded).
+
+# ── Manual-Only ATS Domains ──────────────────────────────────────
+# These ATS platforms have unsolvable CAPTCHAs. Jobs routing through them
+# are flagged as "manual" during apply — bot skips, user applies by hand.
+manual_ats:
+  - "ibegin.tcsapps.com"       # TCS iBegin — unsolvable CAPTCHA every time
+
+# ── Blocked sites — too problematic for automation ───────────────────────
+blocked:
+  sites:
+    - "glassdoor"
+    - "google"
+    - "accenture"
+    - "AccentureCareers"
+    - "Workopolis"
+    - "Dubai Careers"        # broken TLS — net::ERR_SSL_UNRECOGNIZED_NAME_ALERT
+  url_patterns:
+    - "%glassdoor%"
+    - "%google.com/about/careers%"
+    - "%google.jobs%"
+    - "%accenture%"
+    - "%workopolis.com/out%"
+    - "%dubaicareers%"       # block all dubaicareers.ae URLs (broken TLS)
+
+# ── Blocked SSO domains — cannot authenticate through these ──────────────
+blocked_sso:
+  - "accounts.google.com"
+  - "login.microsoftonline.com"
+  - "okta.com"
+  - "auth0.com"
+  - "sso.cisco.com"
+
+# ── Base URLs for URL resolution ─────────────────────────────────────────
+# Used by detail enrichment to resolve relative URLs scraped from sites.
+base_urls:
+  "RemoteOK": "https://remoteok.com"
+  "WeWorkRemotely": "https://weworkremotely.com"
+  "Hacker News Jobs": "https://news.ycombinator.com/"
+
+sites:
+  # ── Gulf/UAE ──────────────────────────────────────────────────────
+  - name: "Bayt"
+    url: "https://www.bayt.com/en/uae/jobs/{query_encoded}-jobs/"
+    type: search  # custom Apify extractor registered in smartextract.py
+
+  - name: "GulfTalent"
+    url: "https://www.gulftalent.com/jobs?search={query_encoded}&location=UAE"
+    type: search  # custom Apify extractor registered in smartextract.py
+
+  - name: "Naukri Gulf"
+    url: "https://www.naukrigulf.com/{query_encoded}-jobs-in-uae"
+    type: search  # custom Apify extractor registered in smartextract.py
+
+  - name: "GulfJobs"
+    url: "https://www.gulfjobs.com/"
+    type: search
+
+  - name: "Dubai Careers"
+    url: "https://www.dubaicareers.ae/search?q={query_encoded}"
+    type: search
+
+  - name: "Laimoon"
+    url: "https://laimoon.com/jobs?q={query_encoded}&country=AE"
+    type: search
+
+  # ── Singapore ────────────────────────────────────────────────────
+  - name: "JobStreet Singapore"
+    url: "https://www.jobstreet.com.sg/{query_encoded}-jobs"
+    type: search
+
+  - name: "MyCareersFuture"
+    url: "https://www.mycareersfuture.gov.sg/search?search={query_encoded}"
+    type: search
+
+  # ── Indonesia/SE Asia ───────────────────────────────────────────
+  - name: "Dealls"
+    url: "https://dealls.com/id/jobs?keyword={query_encoded}"
+    type: search  # custom API extractor registered in smartextract.py
+
+  - name: "JobStreet Indonesia"
+    url: "https://www.jobstreet.co.id/{query_encoded}-pekerjaan"
+    type: search  # custom Apify extractor registered in smartextract.py
+
+  - name: "Glints Indonesia"
+    url: "https://glints.com/id/jobs?keyword={query_encoded}"
+    type: search
+
+  - name: "Karir.com"
+    url: "https://www.karir.com/search?q={query_encoded}"
+    type: search
+
+  - name: "JobStreet Malaysia"
+    url: "https://www.jobstreet.com.my/{query_encoded}-jobs"
+    type: search
+
+  - name: "JobStreet Philippines"
+    url: "https://www.jobstreet.com.ph/{query_encoded}-jobs"
+    type: search
+
+  - name: "Jobsdb Thailand"
+    url: "https://th.jobsdb.com/{query_encoded}-jobs"
+    type: search
+
+  - name: "VietnamWorks"
+    url: "https://www.vietnamworks.com/{query_encoded}-jobs"
+    type: search
+
+  # ── China (expat-friendly) ─────────────────────────────────────
+  - name: "eChinaJobs"
+    url: "https://jobs.echinacities.com/jobs?keywords={query_encoded}"
+    type: search
+
+  - name: "HiredChina"
+    url: "https://www.hiredchina.com/jobs?keywords={query_encoded}"
+    type: search
+
+  - name: "JobSiteChina"
+    url: "https://www.jobsitechina.com/jobs/index.aspx"
+    type: search
+
+  - name: "ChinaJobsDaily"
+    url: "https://www.chinajobsdaily.com/"
+    type: static
+
+  - name: "Zhaopin"
+    url: "https://www.zhaopin.com/"
+    type: static
+
+  # ── Crypto/Web3 ────────────────────────────────────────────────
+  - name: "Web3 Careers"
+    url: "https://web3.career/{query_encoded}-jobs"
+    type: search
+
+  - name: "CryptoJobsList"
+    url: "https://cryptojobslist.com/jobs?search={query_encoded}"
+    type: search
+
+  - name: "Crypto Careers"
+    url: "https://www.crypto-careers.com/jobs?search={query_encoded}"
+    type: search
+
+  # ── Remote-only (US/UK/Europe) ───────────────────────────────
+  - name: "RemoteOK"
+    url: "https://remoteok.com/remote-dev-jobs"
+    type: static
+
+  - name: "WeWorkRemotely"
+    url: "https://weworkremotely.com/categories/remote-programming-jobs"
+    type: static
+
+  - name: "Remotive"
+    url: "https://remotive.com/remote-jobs/software-dev"
+    type: static
+
+  - name: "JustRemote"
+    url: "https://justremote.co/remote-developer-jobs"
+    type: static
+
+  - name: "Himalayas"
+    url: "https://himalayas.app/jobs/developer"
+    type: static
+
+  - name: "Working Nomads"
+    url: "https://www.workingnomads.com/jobs?category=development"
+    type: static
+
+  - name: "Remote.co"
+    url: "https://remote.co/remote-jobs/developer/"
+    type: static
+
+  - name: "Nodesk"
+    url: "https://nodesk.co/remote-jobs/"
+    type: static
+
+  - name: "DynamiteJobs"
+    url: "https://dynamitejobs.com/category/remote-development-jobs"
+    type: static
+
+  - name: "4DayWeek"
+    url: "https://4dayweek.io/remote-jobs/software-engineer"
+    type: static
+
+  - name: "Arc.dev"
+    url: "https://arc.dev/remote-jobs/developer"
+    type: static
+
+  - name: "Jobgether"
+    url: "https://jobgether.com/remote-jobs/software-engineer"
+    type: static
+
+  - name: "TopStartups"
+    url: "https://topstartups.io/jobs/?job_location=Remote"
+    type: static
+
+  - name: "Jobspresso"
+    url: "https://jobspresso.co/remote-work/remote-software-development/"
+    type: static
+
+  - name: "FlexJobs"
+    url: "https://www.flexjobs.com/remote-jobs/computer-it"
+    type: static
+
+  - name: "Otta"
+    url: "https://otta.com/jobs/all?title=software+engineer&remote=true"
+    type: search
+
+  - name: "BuiltIn Remote"
+    url: "https://builtin.com/jobs/remote/dev-engineering"
+    type: static
+
+  - name: "Hacker News Jobs"
+    url: "https://news.ycombinator.com/jobs"
+    type: static

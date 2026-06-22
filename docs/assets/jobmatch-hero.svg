@@ -1,0 +1,118 @@
+<svg width="1280" height="640" viewBox="0 0 1280 640" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">JobMatch README hero</title>
+  <desc id="desc">Local-first job search pipeline showing quickstart commands, scoring flow, and Telegram digest output.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="640" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0B1220"/>
+      <stop offset="0.52" stop-color="#101827"/>
+      <stop offset="1" stop-color="#07111F"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#172033"/>
+      <stop offset="1" stop-color="#101827"/>
+    </linearGradient>
+    <linearGradient id="green" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6EE7B7"/>
+      <stop offset="1" stop-color="#22C55E"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#000814" flood-opacity="0.42"/>
+    </filter>
+    <style>
+      .title{font:700 62px ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;fill:#F8FAFC;letter-spacing:-1.8px}
+      .subtitle{font:500 24px ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;fill:#CBD5E1}
+      .label{font:700 15px ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;fill:#93C5FD;letter-spacing:.7px;text-transform:uppercase}
+      .body{font:500 20px ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;fill:#E5E7EB}
+      .muted{font:500 16px ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;fill:#94A3B8}
+      .code{font:500 17px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fill:#D1FAE5}
+      .digest-title{font:800 22px ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;fill:#F8FAFC}
+      .score{font:800 18px ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;fill:#0B1220}
+      .small{font:600 14px ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;fill:#CBD5E1}
+    </style>
+  </defs>
+
+  <rect width="1280" height="640" rx="36" fill="url(#bg)"/>
+  <circle cx="110" cy="84" r="180" fill="#1E40AF" opacity=".16"/>
+  <circle cx="1110" cy="520" r="220" fill="#047857" opacity=".14"/>
+
+  <text x="64" y="90" class="title">JobMatch</text>
+  <text x="67" y="128" class="subtitle">Find jobs. Rank fit. Send a clean digest.</text>
+
+  <g transform="translate(64 166)">
+    <rect width="216" height="44" rx="22" fill="#0F172A" stroke="#26364F"/>
+    <circle cx="24" cy="22" r="7" fill="#22C55E"/>
+    <text x="42" y="28" class="small">Runs locally</text>
+  </g>
+  <g transform="translate(296 166)">
+    <rect width="222" height="44" rx="22" fill="#0F172A" stroke="#26364F"/>
+    <circle cx="24" cy="22" r="7" fill="#38BDF8"/>
+    <text x="42" y="28" class="small">Bring your own AI</text>
+  </g>
+  <g transform="translate(534 166)">
+    <rect width="255" height="44" rx="22" fill="#0F172A" stroke="#26364F"/>
+    <circle cx="24" cy="22" r="7" fill="#F59E0B"/>
+    <text x="42" y="28" class="small">Telegram / console / file</text>
+  </g>
+  <g transform="translate(805 166)">
+    <rect width="155" height="44" rx="22" fill="#0F172A" stroke="#26364F"/>
+    <circle cx="24" cy="22" r="7" fill="#A78BFA"/>
+    <text x="42" y="28" class="small">Dry-run first</text>
+  </g>
+
+  <g filter="url(#shadow)" transform="translate(64 250)">
+    <rect width="350" height="286" rx="24" fill="url(#card)" stroke="#2B3A55"/>
+    <text x="28" y="42" class="label">Quickstart</text>
+    <rect x="24" y="62" width="302" height="176" rx="14" fill="#070D18" stroke="#243047"/>
+    <text x="44" y="96" class="code">git clone …/jobmatch</text>
+    <text x="44" y="126" class="code">cd jobmatch</text>
+    <text x="44" y="156" class="code">python -m venv .venv</text>
+    <text x="44" y="186" class="code">pip install -e &quot;.[dev]&quot;</text>
+    <text x="44" y="216" class="code">jobmatch run --dry-run</text>
+    <text x="28" y="266" class="muted">No account. No hosted SaaS.</text>
+  </g>
+
+  <g transform="translate(456 294)">
+    <rect width="110" height="58" rx="16" fill="#101827" stroke="#334155"/>
+    <text x="26" y="36" class="body">Sources</text>
+    <path d="M126 29H196" stroke="#38BDF8" stroke-width="4" stroke-linecap="round"/>
+    <path d="M184 17L198 29L184 41" stroke="#38BDF8" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="214" width="104" height="58" rx="16" fill="#101827" stroke="#334155"/>
+    <text x="247" y="36" class="body">Score</text>
+    <path d="M334 29H404" stroke="#6EE7B7" stroke-width="4" stroke-linecap="round"/>
+    <path d="M392 17L406 29L392 41" stroke="#6EE7B7" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="422" width="102" height="58" rx="16" fill="#101827" stroke="#334155"/>
+    <text x="451" y="36" class="body">Digest</text>
+  </g>
+
+  <g transform="translate(500 390)">
+    <rect width="332" height="100" rx="20" fill="#0F172A" stroke="#26364F"/>
+    <text x="24" y="34" class="label">Configured by you</text>
+    <text x="24" y="65" class="muted">roles · resume · dealbreakers · locations</text>
+  </g>
+
+  <g filter="url(#shadow)" transform="translate(890 238)">
+    <rect width="326" height="332" rx="34" fill="#0A1020" stroke="#2B3A55"/>
+    <rect x="22" y="28" width="282" height="276" rx="22" fill="#111827" stroke="#334155"/>
+    <text x="46" y="68" class="digest-title">JobMatch Digest</text>
+    <text x="46" y="96" class="muted">3 jobs scored 8+</text>
+
+    <g transform="translate(44 120)">
+      <rect width="238" height="54" rx="14" fill="#E8FFF5"/>
+      <circle cx="27" cy="27" r="16" fill="url(#green)"/>
+      <text x="20" y="34" class="score">9</text>
+      <rect x="56" y="14" width="144" height="8" rx="4" fill="#0F172A" opacity=".78"/>
+      <rect x="56" y="31" width="104" height="7" rx="3.5" fill="#334155" opacity=".55"/>
+    </g>
+    <g transform="translate(44 188)">
+      <rect width="238" height="54" rx="14" fill="#ECFEFF"/>
+      <circle cx="27" cy="27" r="16" fill="#38BDF8"/>
+      <text x="20" y="34" class="score">8</text>
+      <rect x="56" y="14" width="154" height="8" rx="4" fill="#0F172A" opacity=".78"/>
+      <rect x="56" y="31" width="94" height="7" rx="3.5" fill="#334155" opacity=".55"/>
+    </g>
+    <g transform="translate(44 256)">
+      <rect width="238" height="28" rx="14" fill="#172033"/>
+      <text x="20" y="19" class="small">Review before applying</text>
+    </g>
+  </g>
+</svg>

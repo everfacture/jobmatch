@@ -1,0 +1,25 @@
+import os
+
+from jobmatch.pipeline import run_pipeline
+
+
+def test_run_pipeline_dry_run_requires_no_runtime_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("JOBMATCH_DIR", str(tmp_path))
+    monkeypatch.delenv("JOBMATCH_NOTIFY", raising=False)
+
+    result = run_pipeline(["score"], dry_run=True)
+
+    assert result["errors"] == {}
+    assert result["stages"] == []
+    assert (tmp_path / "jobmatch.db").exists() is False
+    assert os.environ.get("JOBMATCH_RUN_ID") is None
+
+
+def test_run_pipeline_dry_run_accepts_explicit_default_pipeline(tmp_path, monkeypatch):
+    monkeypatch.setenv("JOBMATCH_DIR", str(tmp_path))
+    monkeypatch.delenv("JOBMATCH_NOTIFY", raising=False)
+
+    result = run_pipeline(None, dry_run=True)
+
+    assert result["errors"] == {}
+    assert [stage["stage"] for stage in result["stages"]] == []

@@ -1,0 +1,53 @@
+# JobMatch scoring preferences example
+# Copy to ~/.jobmatch/preferences.yaml and edit for your own search.
+# This file defines user-specific scoring behaviour. Current code loads it from
+# ~/.jobmatch/preferences.yaml; missing preferences are allowed but less precise.
+
+candidate:
+  headline: "Backend engineer with Python, API, and cloud experience"
+  target_seniority: ["mid-level", "senior"]
+
+scoring:
+  min_score: 7
+
+  # Roles that should score highest when the job also matches your resume.
+  target_roles:
+    - "Backend Engineer"
+    - "Software Engineer"
+    - "Platform Engineer"
+
+  # Roles that are plausible but should be judged more carefully.
+  adjacent_roles:
+    - "Data Engineer"
+    - "Implementation Engineer"
+    - "Technical Product Manager"
+
+  # Obvious mismatches for this candidate. These should be low-score or rejected.
+  reject_roles:
+    - "Sales Development Representative"
+    - "Graphic Designer"
+    - "Nurse"
+
+  # Hard caps are deterministic guardrails before/after LLM scoring.
+  hard_caps:
+    - name: "requires_security_clearance"
+      patterns: ["security clearance required", "active clearance"]
+      max_score: 3
+    - name: "relocation_required"
+      patterns: ["must relocate", "onsite only"]
+      max_score: 5
+
+  dealbreakers:
+    - "unpaid"
+    - "commission only"
+
+  positive_signals:
+    - "Python"
+    - "APIs"
+    - "PostgreSQL"
+    - "AWS"
+    - "remote"
+
+  negative_signals:
+    - "cold calling"
+    - "door to door"

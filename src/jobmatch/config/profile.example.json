@@ -1,0 +1,54 @@
+{
+  "personal": {
+    "full_name": "Your Name",
+    "preferred_name": "Your Preferred Name",
+    "email": "you@example.com",
+    "phone": "",
+    "city": "Your City",
+    "province_state": "Your State/Province",
+    "country": "Your Country",
+    "postal_code": "",
+    "address": "",
+    "linkedin_url": "https://www.linkedin.com/in/yourprofile",
+    "github_url": "",
+    "portfolio_url": "",
+    "website_url": ""
+  },
+  "work_authorization": {
+    "legally_authorized_to_work": true,
+    "require_sponsorship": false,
+    "work_permit_type": ""
+  },
+  "availability": {
+    "earliest_start_date": "Immediately"
+  },
+  "compensation": {
+    "salary_expectation": "",
+    "salary_currency": "USD",
+    "salary_range_min": "",
+    "salary_range_max": ""
+  },
+  "experience": {
+    "years_of_experience_total": "",
+    "education_level": "",
+    "current_title": "",
+    "target_role": "Software Engineer"
+  },
+  "skills_boundary": {
+    "programming_languages": ["Python", "SQL"],
+    "frameworks": ["FastAPI"],
+    "tools": ["Git", "Linux"]
+  },
+  "resume_facts": {
+    "preserved_companies": ["Company A"],
+    "preserved_projects": ["Project X"],
+    "preserved_school": "Your School",
+    "real_metrics": ["Reduced processing time by 30%"]
+  },
+  "eeo_voluntary": {
+    "gender": "Decline to self-identify",
+    "race_ethnicity": "Decline to self-identify",
+    "veteran_status": "Decline to self-identify",
+    "disability_status": "Decline to self-identify"
+  }
+}
