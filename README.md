@@ -83,7 +83,29 @@ jobmatch run --dry-run
 
 `--dry-run` is the safe test. It prints what would run and should not create a database or call an AI provider.
 
-### Run the normal pipeline
+If `doctor` says the LLM provider is missing, that is fine for discovery. You only need the AI key before scoring.
+
+### Which command should I run?
+
+| If you want to... | Run this |
+|---|---|
+| Check install only | `jobmatch doctor` |
+| Preview safely | `jobmatch run --dry-run` |
+| Find jobs without AI | `JOBMATCH_NOTIFY=0 jobmatch run discover --workers 1` |
+| Score jobs | configure AI, then `jobmatch run score --no-notify` |
+| Send Telegram digest | configure AI + Telegram, then `jobmatch run score --notify` |
+
+### Run discovery first
+
+Discovery does not need an AI key:
+
+```bash
+JOBMATCH_NOTIFY=0 jobmatch run discover --workers 1
+```
+
+You should see a summary with jobs added to the database. If it says `0 jobs`, edit `~/.jobmatch/searches.yaml` and try broader roles or locations.
+
+### Run the normal pipeline after AI is configured
 
 ```bash
 jobmatch run
@@ -114,10 +136,10 @@ JOBMATCH_TELEGRAM_CHAT_ID=your_chat_id
 JOBMATCH_TELEGRAM_THREAD_ID=
 ```
 
-Then run:
+Then, after AI is configured and discovery has found jobs, run:
 
 ```bash
-jobmatch run --notify
+jobmatch run score --notify
 ```
 
 If Telegram does not send, switch back to:

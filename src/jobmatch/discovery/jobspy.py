@@ -133,9 +133,21 @@ def _load_location_config(search_cfg: dict) -> tuple[list[str], list[str]]:
 
     Falls back to sensible defaults if not defined in the YAML.
     """
-    accept = search_cfg.get("location_accept", [])
-    reject = search_cfg.get("location_reject_non_remote", [])
+    location_cfg = search_cfg.get("location") or {}
+    accept = search_cfg.get("location_accept") or location_cfg.get("accept_patterns", [])
+    reject = search_cfg.get("location_reject_non_remote") or location_cfg.get("reject_patterns", [])
     return accept, reject
+
+
+def _location_label(loc: dict) -> str:
+    """Return a stable display/filter label for a location config entry.
+
+    `jobmatch init` writes compact location entries. Older generated configs did
+    not include `label`, while the hand-written example config did. Public users
+    should not get a KeyError just because they used the wizard instead of
+    copying the example YAML.
+    """
+    return str(loc.get("label") or loc.get("location_label") or loc.get("name") or loc["location"])
 
 
 def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> bool:
@@ -447,7 +459,7 @@ def _full_crawl(
     if tiers:
         queries = [q for q in queries if q.get("tier") in tiers]
     if locations:
-        locs = [loc for loc in locs if loc.get("label") in locations]
+        locs = [loc for loc in locs if _location_label(loc) in locations]
 
     searches = []
     for q in queries:
@@ -455,7 +467,7 @@ def _full_crawl(
             searches.append({
                 "query": q["query"],
                 "location": loc["location"],
-                "location_label": loc["label"],
+                "location_label": _location_label(loc),
                 "remote": loc.get("remote", False),
                 "tier": q.get("tier", 0),
             })

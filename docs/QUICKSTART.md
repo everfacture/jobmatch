@@ -214,6 +214,8 @@ DRY RUN — would execute:
 
 This should not create a DB and should not need an AI key.
 
+Important: `jobmatch run --dry-run` is only a preview. The first real command to test the bot is discovery, not the full pipeline.
+
 ---
 
 ## 7. Run discovery first
@@ -223,6 +225,16 @@ Discovery hits external job sites. Start small.
 ```bash
 JOBMATCH_NOTIFY=0 jobmatch run discover --workers 1
 ```
+
+What good looks like:
+
+```text
+Stage 'discover' completed ... ok
+DB Final State:
+  Total jobs:     10+
+```
+
+If you get `0 jobs`, the app still worked; your search was probably too narrow or the job board blocked/returned nothing. Edit `~/.jobmatch/searches.yaml` and try broader roles or locations.
 
 For big search configs, chunk it:
 
@@ -244,6 +256,8 @@ jobmatch status
 ## 8. Score jobs
 
 Scoring sends job/profile/resume text to your configured AI provider.
+
+If you skipped AI setup, this command will fail on purpose and tell you to add `JOBMATCH_LLM_BASE_URL`, `JOBMATCH_LLM_API_KEY`, and `JOBMATCH_LLM_MODEL`.
 
 ```bash
 jobmatch run score --no-notify
