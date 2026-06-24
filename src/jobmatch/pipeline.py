@@ -204,6 +204,7 @@ def run_pipeline(
     min_score: int = 7,
     dry_run: bool = False,
     workers: int = 1,
+    score_limit: int = 0,
     validation_mode: str = "normal",
     rescore: bool = False,
     with_resume: bool = False,
@@ -215,6 +216,7 @@ def run_pipeline(
         min_score: Minimum fit score for scoring/digest stages.
         dry_run: If True, preview stages without executing.
         workers: Number of parallel threads for discovery/enrichment/scoring stages.
+        score_limit: Maximum jobs to score in this run. 0 means no cap.
         validation_mode: strict | normal | lenient for tailor/cover stages when run explicitly.
         rescore: If True, force re-scoring of ALL jobs (not just unscored).
         with_resume: If True, include the tailor stage.
@@ -235,6 +237,8 @@ def run_pipeline(
     ))
     console.print(f"  Min score:  {min_score}")
     console.print(f"  Workers:    {workers}")
+    if score_limit > 0:
+        console.print(f"  Score cap:  {score_limit}")
     console.print(f"  Validation: {validation_mode}")
     console.print(f"  Stages:     {' -> '.join(ordered)}")
 
@@ -267,6 +271,7 @@ def run_pipeline(
     try:
         result = _run_sequential(
             ordered, min_score, workers=workers,
+            score_limit=score_limit,
             validation_mode=validation_mode, rescore=rescore,
         )
         finish_pipeline_run(run_id, "error" if result.get("errors") else "ok", result)
@@ -320,6 +325,7 @@ def run_pipeline(
 
 
 def _run_sequential(ordered: list[str], min_score: int, workers: int = 1,
+                    score_limit: int = 0,
                     validation_mode: str = "normal", rescore: bool = False) -> dict:
     """Execute stages one at a time."""
     results: list[dict] = []
@@ -346,6 +352,8 @@ def _run_sequential(ordered: list[str], min_score: int, workers: int = 1,
             if name in ("score", "cover"):
                 kwargs["workers"] = workers
                 kwargs["stagger"] = 0.5
+            if name == "score" and score_limit > 0:
+                kwargs["limit"] = score_limit
             if name == "score" and rescore:
                 kwargs["rescore"] = True
 

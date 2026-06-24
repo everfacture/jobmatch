@@ -131,6 +131,8 @@ Open:
 ~/.jobmatch/preferences.yaml
 ```
 
+`jobmatch init` creates a starter version. Fill in rejects/dealbreakers before AI scoring; otherwise obvious bad matches may still burn paid LLM calls.
+
 Simple version:
 
 ```yaml
@@ -260,8 +262,10 @@ Scoring sends job/profile/resume text to your configured AI provider.
 If you skipped AI setup, this command will fail on purpose and tell you to add `JOBMATCH_LLM_BASE_URL`, `JOBMATCH_LLM_API_KEY`, and `JOBMATCH_LLM_MODEL`.
 
 ```bash
-jobmatch run score --no-notify
+jobmatch run score --score-limit 100 --no-notify
 ```
+
+Use `--score-limit` or `JOBMATCH_SCORE_LIMIT=100` when you want a hard cap on paid AI scoring calls.
 
 Then:
 

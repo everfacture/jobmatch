@@ -8,6 +8,7 @@ candidate-neutral; personal search strategy belongs in ~/.jobmatch/preferences.y
 from __future__ import annotations
 
 import logging
+import os
 import time
 from datetime import datetime, timezone
 from typing import Any
@@ -210,6 +211,14 @@ def run_scoring(limit: int = 0, rescore: bool = False, min_score: int = 7,
     Returns:
         {"scored": int, "errors": int, "pruned": int, "elapsed": float, "distribution": list}
     """
+    if limit <= 0:
+        limit_raw = os.environ.get("JOBMATCH_SCORE_LIMIT", "").strip()
+        if limit_raw:
+            try:
+                limit = max(0, int(limit_raw))
+            except ValueError:
+                log.warning("Ignoring invalid JOBMATCH_SCORE_LIMIT=%r", limit_raw)
+
     resume_text = RESUME_PATH.read_text(encoding="utf-8")
     profile = load_profile()
     preferences = load_preferences()

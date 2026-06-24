@@ -9,6 +9,7 @@ search configuration YAML (searches.yaml) rather than being hardcoded.
 
 import logging
 import os
+import re
 import sqlite3
 import time
 from datetime import datetime, timezone
@@ -179,6 +180,28 @@ def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> 
     return False
 
 
+def _normalise_phrase(text: str | None) -> str:
+    """Normalise text for phrase-level title matching."""
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", str(text or "").lower()).split())
+
+
+def _title_excluded(title: str | None, exclude_titles: list[str] | None) -> bool:
+    """Return true when a title contains a configured excluded phrase.
+
+    Uses normalised phrase matching so `intern` does not match `international`,
+    while `entry-level` and `entry level` are treated the same.
+    """
+    if not title or not exclude_titles:
+        return False
+
+    title_norm = f" {_normalise_phrase(title)} "
+    for phrase in exclude_titles:
+        phrase_norm = _normalise_phrase(phrase)
+        if phrase_norm and f" {phrase_norm} " in title_norm:
+            return True
+    return False
+
+
 # -- DB storage (JobSpy DataFrame -> SQLite) ---------------------------------
 
 def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tuple[int, int]:
@@ -269,6 +292,7 @@ def _run_one_search(
     reject_locs: list[str],
     glassdoor_map: dict,
     country_indeed_map: dict | None = None,
+    exclude_titles: list[str] | None = None,
 ) -> dict:
     """Run a single search query and store results in DB."""
     s = search
@@ -354,15 +378,41 @@ def _run_one_search(
     ), axis=1)]
     filtered = before - len(df)
 
+    # Filter configured no-go titles before storage/scoring. These rows would
+    # otherwise be promoted straight to `full_description` by JobSpy and burn an
+    # LLM scoring call only to be rejected later.
+    title_filtered = 0
+    if exclude_titles:
+        before_title = len(df)
+        df = df[~df.apply(
+            lambda row: _title_excluded(
+                str(row.get("title", "")) if str(row.get("title", "")) != "nan" else "",
+                exclude_titles,
+            ),
+            axis=1,
+        )]
+        title_filtered = before_title - len(df)
+
     conn = get_connection()
     new, existing = store_jobspy_results(conn, df, s["query"])
 
     msg = f"[{label}] {before} results -> {new} new, {existing} dupes"
     if filtered:
         msg += f", {filtered} filtered (location)"
+    if title_filtered:
+        msg += f", {title_filtered} filtered (title)"
     log.info(msg)
 
-    return {"new": new, "existing": existing, "errors": 0, "filtered": filtered, "total": before, "label": label}
+    return {
+        "new": new,
+        "existing": existing,
+        "errors": 0,
+        "filtered": filtered + title_filtered,
+        "location_filtered": filtered,
+        "title_filtered": title_filtered,
+        "total": before,
+        "label": label,
+    }
 
 
 # -- Single query search -----------------------------------------------------
@@ -455,6 +505,7 @@ def _full_crawl(
     defaults = search_cfg.get("defaults", {})
     glassdoor_map = search_cfg.get("glassdoor_location_map", {})
     accept_locs, reject_locs = _load_location_config(search_cfg)
+    exclude_titles = search_cfg.get("exclude_titles") or []
 
     if tiers:
         queries = [q for q in queries if q.get("tier") in tiers]
@@ -521,6 +572,7 @@ def _full_crawl(
             proxy_config, defaults, max_retries,
             accept_locs, reject_locs, glassdoor_map,
             country_indeed_map=country_indeed_map,
+            exclude_titles=exclude_titles,
         )
         completed += 1
         total_new += result["new"]

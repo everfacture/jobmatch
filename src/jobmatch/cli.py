@@ -99,6 +99,11 @@ def run(
     ),
     min_score: int = typer.Option(7, "--min-score", help="Minimum fit score for scoring/digest stages."),
     workers: int = typer.Option(5, "--workers", "-w", help="Parallel threads for discovery/enrichment/scoring."),
+    score_limit: int = typer.Option(
+        0,
+        "--score-limit",
+        help="Maximum jobs to score in this run. 0 means no cap.",
+    ),
     rescore: bool = typer.Option(False, "--rescore", help="Force re-scoring of ALL jobs (not just unscored)."),
     with_resume: bool = typer.Option(False, "--with-resume", help="Include tailor stage (generates full PDF resumes)."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview stages without executing."),
@@ -159,6 +164,7 @@ def run(
         min_score=min_score,
         dry_run=dry_run,
         workers=workers,
+        score_limit=score_limit,
         validation_mode=validation,
         rescore=rescore,
         with_resume=with_resume,
@@ -273,7 +279,8 @@ def doctor() -> None:
     """Check your setup and diagnose missing requirements."""
     from jobmatch.config import (
         load_env, PROFILE_PATH, RESUME_PATH, RESUME_PDF_PATH,
-        SEARCH_CONFIG_PATH,
+        SEARCH_CONFIG_PATH, PREFERENCES_PATH, load_preferences,
+        scoring_preferences,
     )
 
     load_env()
@@ -304,6 +311,22 @@ def doctor() -> None:
         results.append(("searches.yaml", ok_mark, str(SEARCH_CONFIG_PATH)))
     else:
         results.append(("searches.yaml", warn_mark, "Will use example config — run 'jobmatch init'"))
+
+    # Scoring preferences are not required for discovery, but missing/empty
+    # preferences make AI scoring noisier and more expensive because deterministic
+    # yes/no rules have nothing to work with.
+    if PREFERENCES_PATH.exists():
+        prefs = load_preferences()
+        if scoring_preferences(prefs):
+            results.append(("preferences.yaml", ok_mark, str(PREFERENCES_PATH)))
+        else:
+            results.append(("preferences.yaml", warn_mark, "File exists but has no scoring rules"))
+    else:
+        results.append((
+            "preferences.yaml",
+            warn_mark,
+            "Recommended before AI scoring — run 'jobmatch init' or copy preferences.example.yaml",
+        ))
 
     # jobspy (job board discovery dependency)
     try:

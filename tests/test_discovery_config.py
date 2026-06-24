@@ -19,6 +19,16 @@ def test_location_filters_accept_nested_example_config():
     assert reject == ["must relocate"]
 
 
+def test_title_exclusion_matches_phrases_not_substrings():
+    patterns = ["intern", "entry-level", "UAE National"]
+
+    assert jobspy._title_excluded("Product Manager Intern", patterns)
+    assert jobspy._title_excluded("Entry Level Procurement Officer", patterns)
+    assert jobspy._title_excluded("Procurement Officer - UAE National", patterns)
+    assert not jobspy._title_excluded("International Trade Compliance Manager", patterns)
+    assert not jobspy._title_excluded("Senior Procurement Manager", patterns)
+
+
 def test_full_crawl_accepts_wizard_generated_location_without_label(monkeypatch):
     searches = []
 
@@ -34,6 +44,7 @@ def test_full_crawl_accepts_wizard_generated_location_without_label(monkeypatch)
         reject_locs,
         glassdoor_map,
         country_indeed_map=None,
+        exclude_titles=None,
     ):
         searches.append(search)
         return {"new": 0, "existing": 0, "errors": 0, "filtered": 0, "total": 0, "label": "test"}

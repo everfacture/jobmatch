@@ -92,7 +92,7 @@ If `doctor` says the LLM provider is missing, that is fine for discovery. You on
 | Check install only | `jobmatch doctor` |
 | Preview safely | `jobmatch run --dry-run` |
 | Find jobs without AI | `JOBMATCH_NOTIFY=0 jobmatch run discover --workers 1` |
-| Score jobs | configure AI, then `jobmatch run score --no-notify` |
+| Score jobs | configure AI, then `jobmatch run score --score-limit 100 --no-notify` |
 | Send Telegram digest | configure AI + Telegram, then `jobmatch run score --notify` |
 
 ### Run discovery first
@@ -181,6 +181,8 @@ The main file is:
 ```text
 ~/.jobmatch/preferences.yaml
 ```
+
+`jobmatch init` creates a starter version. Keep it filled in before AI scoring; otherwise JobMatch has fewer deterministic yes/no rules and may spend more paid LLM calls rejecting obvious mismatches.
 
 Simple version:
 
@@ -282,6 +284,7 @@ See [`docs/PROVIDERS.md`](docs/PROVIDERS.md) for more detail.
 | `jobmatch doctor` | check setup and missing requirements |
 | `jobmatch run --dry-run` | preview the pipeline safely |
 | `jobmatch run` | run discover/enrich/score/dedup/notify |
+| `jobmatch run score --score-limit 100 --no-notify` | cap paid scoring calls for a batch |
 | `jobmatch status` | show database counts |
 | `jobmatch run cover --min-score 8` | optional cover-letter drafts, off by default |
 

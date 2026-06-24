@@ -4,6 +4,7 @@ Interactive flow that creates ~/.jobmatch/ with:
   - resume.txt (and optionally resume.pdf)
   - profile.json
   - searches.yaml
+  - preferences.yaml
   - .env (LLM API key)
 """
 
@@ -16,10 +17,12 @@ from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
+import yaml
 
 from jobmatch.config import (
     APP_DIR,
     ENV_PATH,
+    PREFERENCES_PATH,
     PROFILE_PATH,
     RESUME_PATH,
     RESUME_PDF_PATH,
@@ -183,7 +186,7 @@ def _setup_profile() -> dict:
 # Search config
 # ---------------------------------------------------------------------------
 
-def _setup_searches() -> None:
+def _setup_searches() -> list[str]:
     """Generate a searches.yaml from user input."""
     console.print(Panel("[bold]Step 3: Job Search Config[/bold]\nDefine what you're looking for."))
 
@@ -231,6 +234,123 @@ def _setup_searches() -> None:
 
     SEARCH_CONFIG_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
     console.print(f"[green]Search config saved to {SEARCH_CONFIG_PATH}[/green]")
+    return roles
+
+
+# ---------------------------------------------------------------------------
+# Scoring preferences
+# ---------------------------------------------------------------------------
+
+def _split_csv(value: str) -> list[str]:
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _unique(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in items:
+        key = item.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+    return result
+
+
+def _skill_signals(profile: dict) -> list[str]:
+    skills = profile.get("skills_boundary") if isinstance(profile, dict) else {}
+    if not isinstance(skills, dict):
+        return []
+    signals: list[str] = []
+    for value in skills.values():
+        if isinstance(value, list):
+            signals.extend(str(item).strip() for item in value if str(item).strip())
+    return _unique(signals)[:12]
+
+
+def build_preferences_yaml(
+    profile: dict,
+    roles: list[str],
+    *,
+    headline: str = "",
+    adjacent_roles: list[str] | None = None,
+    reject_roles: list[str] | None = None,
+    dealbreakers: list[str] | None = None,
+    positive_signals: list[str] | None = None,
+    negative_signals: list[str] | None = None,
+) -> str:
+    """Build a starter preferences.yaml from wizard answers.
+
+    The file is intentionally user-owned runtime config. It gives scoring enough
+    deterministic guardrails that obvious yes/no jobs do not all require paid LLM
+    calls, while keeping the public repo free of one candidate's private lane.
+    """
+    experience = profile.get("experience") if isinstance(profile, dict) else {}
+    if not isinstance(experience, dict):
+        experience = {}
+
+    target_role = str(experience.get("target_role") or experience.get("current_title") or "").strip()
+    target_roles = _unique(([target_role] if target_role else []) + roles)
+    signals = positive_signals if positive_signals is not None else _skill_signals(profile)
+
+    preferences = {
+        "candidate": {
+            "headline": headline or (f"Candidate targeting {target_roles[0]} roles" if target_roles else "Candidate"),
+        },
+        "scoring": {
+            "min_score": 7,
+            "target_roles": target_roles,
+            "adjacent_roles": adjacent_roles or [],
+            "reject_roles": reject_roles or [],
+            "dealbreakers": dealbreakers or ["unpaid", "commission only"],
+            "positive_signals": signals,
+            "negative_signals": negative_signals or [],
+        },
+    }
+    return yaml.safe_dump(preferences, sort_keys=False, allow_unicode=True)
+
+
+def _setup_preferences(profile: dict, roles: list[str]) -> None:
+    """Generate a starter preferences.yaml for deterministic scoring guardrails."""
+    console.print(Panel(
+        "[bold]Step 4: Scoring Preferences[/bold]\n"
+        "These rules cut noise and reduce paid AI scoring calls. You can edit them later."
+    ))
+
+    if PREFERENCES_PATH.exists() and not Confirm.ask(
+        f"Overwrite existing preferences at {PREFERENCES_PATH}?",
+        default=False,
+    ):
+        console.print(f"[yellow]Keeping existing {PREFERENCES_PATH}[/yellow]")
+        return
+
+    experience = profile.get("experience") if isinstance(profile, dict) else {}
+    target_role = ""
+    if isinstance(experience, dict):
+        target_role = str(experience.get("target_role") or experience.get("current_title") or "").strip()
+
+    headline = Prompt.ask(
+        "One-line candidate headline for scoring",
+        default=f"Candidate targeting {target_role or (roles[0] if roles else 'selected')} roles",
+    )
+    adjacent = _split_csv(Prompt.ask("Adjacent/acceptable roles (comma-separated, optional)", default=""))
+    rejects = _split_csv(Prompt.ask("Job titles/roles to reject (comma-separated, optional)", default=""))
+    dealbreakers = _split_csv(Prompt.ask("Dealbreaker phrases", default="unpaid, commission only"))
+    negatives = _split_csv(Prompt.ask("Negative signals (comma-separated, optional)", default=""))
+
+    PREFERENCES_PATH.write_text(
+        build_preferences_yaml(
+            profile,
+            roles,
+            headline=headline,
+            adjacent_roles=adjacent,
+            reject_roles=rejects,
+            dealbreakers=dealbreakers,
+            negative_signals=negatives,
+        ),
+        encoding="utf-8",
+    )
+    console.print(f"[green]Scoring preferences saved to {PREFERENCES_PATH}[/green]")
 
 
 # ---------------------------------------------------------------------------
@@ -240,7 +360,7 @@ def _setup_searches() -> None:
 def _setup_ai_features() -> None:
     """Ask about AI scoring/tailoring — optional LLM configuration."""
     console.print(Panel(
-        "[bold]Step 4: AI Features (optional)[/bold]\n"
+        "[bold]Step 5: AI Features (optional)[/bold]\n"
         "An LLM powers job scoring and fit analysis.\n"
         "Without this, you can still discover and enrich jobs."
     ))
@@ -301,7 +421,7 @@ def _setup_ai_features() -> None:
 def _setup_auto_apply() -> None:
     """Configure manual apply helpers (requires Claude Code CLI)."""
     console.print(Panel(
-        "[bold]Step 5: Manual Apply Helpers (optional)[/bold]\n"
+        "[bold]Step 6: Manual Apply Helpers (optional)[/bold]\n"
         "Cover letters and apply packs only — fill and submit job applications\n"
         "using Claude Code as the browser agent."
     ))
@@ -364,18 +484,22 @@ def run_wizard() -> None:
     console.print()
 
     # Step 2: Profile
-    _setup_profile()
+    profile = _setup_profile()
     console.print()
 
     # Step 3: Search config
-    _setup_searches()
+    roles = _setup_searches()
     console.print()
 
-    # Step 4: AI features (optional LLM)
+    # Step 4: scoring preferences
+    _setup_preferences(profile, roles)
+    console.print()
+
+    # Step 5: AI features (optional LLM)
     _setup_ai_features()
     console.print()
 
-    # Step 5: Manual apply helpers (Claude Code detection)
+    # Step 6: Manual apply helpers (Claude Code detection)
     _setup_auto_apply()
     console.print()
 
