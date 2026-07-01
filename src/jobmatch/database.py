@@ -180,15 +180,31 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
             completion_tokens INTEGER,
             total_tokens      INTEGER,
             estimated_cost_usd REAL,
+            request_count     INTEGER,
             elapsed_ms        INTEGER,
             success           INTEGER NOT NULL DEFAULT 1,
             error             TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS notification_history (
+            fingerprint       TEXT PRIMARY KEY,
+            first_notified_at TEXT NOT NULL,
+            last_seen_at      TEXT NOT NULL,
+            url               TEXT,
+            application_url   TEXT,
+            title             TEXT,
+            company           TEXT,
+            location          TEXT,
+            fit_score         INTEGER
         )
     """)
     conn.commit()
 
     # Run migrations for any columns added after initial schema
     ensure_columns(conn)
+    ensure_llm_usage_columns(conn)
+    ensure_notification_history(conn)
 
     return conn
 
@@ -286,6 +302,41 @@ def ensure_columns(conn: sqlite3.Connection | None = None) -> list[str]:
     return added
 
 
+def ensure_llm_usage_columns(conn: sqlite3.Connection | None = None) -> list[str]:
+    """Add usage-accounting columns introduced after the llm_usage table."""
+    if conn is None:
+        conn = get_connection()
+
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(llm_usage)").fetchall()}
+    added = []
+    for col, dtype in {"request_count": "INTEGER"}.items():
+        if col not in existing:
+            conn.execute(f"ALTER TABLE llm_usage ADD COLUMN {col} {dtype}")
+            added.append(col)
+    conn.commit()
+    return added
+
+
+def ensure_notification_history(conn: sqlite3.Connection | None = None) -> None:
+    """Create durable notification fingerprint table for cross-day dedupe."""
+    if conn is None:
+        conn = get_connection()
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS notification_history (
+            fingerprint       TEXT PRIMARY KEY,
+            first_notified_at TEXT NOT NULL,
+            last_seen_at      TEXT NOT NULL,
+            url               TEXT,
+            application_url   TEXT,
+            title             TEXT,
+            company           TEXT,
+            location          TEXT,
+            fit_score         INTEGER
+        )
+    """)
+    conn.commit()
+
+
 def record_llm_usage(
     *,
     stage: str,
@@ -296,6 +347,7 @@ def record_llm_usage(
     total_tokens: int | None,
     estimated_cost_usd: float | None,
     elapsed_ms: int | None,
+    request_count: int | None = None,
     success: bool = True,
     error: str | None = None,
     conn: sqlite3.Connection | None = None,
@@ -306,6 +358,7 @@ def record_llm_usage(
     """
     if conn is None:
         conn = get_connection()
+    ensure_llm_usage_columns(conn)
     run_id_raw = os.environ.get("JOBMATCH_RUN_ID", "").strip()
     run_id = int(run_id_raw) if run_id_raw.isdigit() else None
     conn.execute(
@@ -313,14 +366,14 @@ def record_llm_usage(
         INSERT INTO llm_usage (
             created_at, pipeline_run_id, stage, provider_label, model,
             prompt_tokens, completion_tokens, total_tokens,
-            estimated_cost_usd, elapsed_ms, success, error
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            estimated_cost_usd, request_count, elapsed_ms, success, error
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             datetime.now(timezone.utc).isoformat(), run_id, stage,
             provider_label, model, prompt_tokens, completion_tokens,
-            total_tokens, estimated_cost_usd, elapsed_ms, 1 if success else 0,
-            error,
+            total_tokens, estimated_cost_usd, request_count, elapsed_ms,
+            1 if success else 0, error,
         ),
     )
     conn.commit()

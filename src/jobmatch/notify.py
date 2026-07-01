@@ -6,7 +6,7 @@ Sends a digest of jobs scored >= threshold to the configured notifier.
 Adapter interface:
     class Notifier(ABC):
         def label(self) -> str: ...
-        def send_digest(self, jobs: list[dict], min_score: int) -> int: ...
+        def send_digest(self, min_score: int) -> NotifyReport: ...
 
 Built-in adapters:
     TelegramNotifier — sends individual job messages via Telegram Bot API
@@ -15,19 +15,63 @@ Built-in adapters:
 Register new adapters by adding to the NOTIFIERS dict.
 """
 
+from __future__ import annotations
+
+import hashlib
 import os
 import re
 import time
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
 from jobmatch.config.paths import ENV_PATH
-from jobmatch.database import get_connection
+from jobmatch.database import ensure_notification_history, get_connection
 
 # Load .env before reading config vars
-load_dotenv(ENV_PATH, override=True)
+load_dotenv(ENV_PATH, override=False)
+
+
+# ---------------------------------------------------------------------------
+# Result object
+# ---------------------------------------------------------------------------
+
+@dataclass(slots=True)
+class NotifyReport:
+    """Operator-facing notification counters.
+
+    Keep Telegram delivery separate from DB rows marked notified by suppression.
+    The old single integer made `sent 0` look like failure even when the
+    history/dedupe path deliberately advanced rows so they would not repeat.
+    """
+
+    notifier: str
+    telegram_cards_sent: int = 0
+    fresh_jobs_delivered: int = 0
+    history_suppressed: int = 0
+    closed_marked_notified: int = 0
+    failed: int = 0
+
+    @property
+    def marked_notified_without_card(self) -> int:
+        return self.history_suppressed + self.closed_marked_notified
+
+    def summary_line(self) -> str:
+        return (
+            f"telegram_cards_sent={self.telegram_cards_sent} "
+            f"fresh_jobs_delivered={self.fresh_jobs_delivered} "
+            f"history_suppressed={self.history_suppressed} "
+            f"closed_marked_notified={self.closed_marked_notified} "
+            f"failed={self.failed} via {self.notifier}"
+        )
+
+
+@dataclass(slots=True)
+class PendingJobs:
+    jobs: list[dict]
+    history_suppressed: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -43,15 +87,8 @@ class Notifier(ABC):
         ...
 
     @abstractmethod
-    def send_digest(self, min_score: int = 7) -> int:
-        """Send digest of high-fit jobs.
-
-        Args:
-            min_score: Minimum fit_score threshold.
-
-        Returns:
-            Number of jobs successfully sent.
-        """
+    def send_digest(self, min_score: int = 7) -> NotifyReport:
+        """Send digest of high-fit jobs and return explicit counters."""
         ...
 
 
@@ -59,17 +96,128 @@ class Notifier(ABC):
 # Shared helpers
 # ---------------------------------------------------------------------------
 
-_NOTIFY_THRESHOLD = max(8, int(os.environ.get("NOTIFY_THRESHOLD", "8")))
-_NOTIFY_THRESHOLD_URGENT = int(os.environ.get("NOTIFY_THRESHOLD_URGENT", "9"))
+def _env_int(default: int, *names: str) -> int:
+    """Return first valid integer env value from aliases."""
+    for name in names:
+        raw = os.environ.get(name, "").strip()
+        if not raw:
+            continue
+        try:
+            return int(raw)
+        except ValueError:
+            continue
+    return default
 
 
-def _fetch_pending_jobs(min_score: int) -> list[dict]:
+_NOTIFY_THRESHOLD = max(1, _env_int(8, "JOBMATCH_NOTIFY_THRESHOLD", "NOTIFY_THRESHOLD"))
+_NOTIFY_THRESHOLD_URGENT = _env_int(9, "JOBMATCH_NOTIFY_THRESHOLD_URGENT", "NOTIFY_THRESHOLD_URGENT")
+
+
+def _canonical_text(value: object) -> str:
+    """Normalize text enough for notification dedupe, without fuzzy guessing."""
+    text = str(value or "").lower().strip()
+    text = re.sub(r"https?://", "", text)
+    text = re.sub(r"[?#].*$", "", text)
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return text.strip()
+
+
+def _notification_fingerprint(job: dict) -> str:
+    """Stable cross-day key for the same job resurfacing under a new row/url."""
+    apply_url = _canonical_text(job.get("application_url"))
+    source_url = _canonical_text(job.get("url"))
+    if apply_url:
+        basis = f"application_url:{apply_url}"
+    elif source_url:
+        basis = f"url:{source_url}"
+    else:
+        basis = "role:" + "|".join(
+            _canonical_text(job.get(key)) for key in ("title", "company", "location")
+        )
+    return hashlib.sha256(basis.encode("utf-8")).hexdigest()
+
+
+def _role_fingerprint(job: dict) -> str:
+    """Secondary key catches reposts where the board changes URLs overnight."""
+    basis = "role:" + "|".join(
+        _canonical_text(job.get(key)) for key in ("title", "company", "location")
+    )
+    return hashlib.sha256(basis.encode("utf-8")).hexdigest()
+
+
+def _history_fingerprints(job: dict) -> tuple[str, str]:
+    primary = _notification_fingerprint(job)
+    role = _role_fingerprint(job)
+    return primary, role
+
+
+def _is_previously_notified(conn, job: dict) -> bool:
+    ensure_notification_history(conn)
+    primary, role = _history_fingerprints(job)
+    row = conn.execute(
+        "SELECT 1 FROM notification_history WHERE fingerprint IN (?, ?) LIMIT 1",
+        (primary, role),
+    ).fetchone()
+    return row is not None
+
+
+def _record_notification_history(conn, job: dict, notified_at: str) -> None:
+    ensure_notification_history(conn)
+    for fingerprint in _history_fingerprints(job):
+        conn.execute(
+            """
+            INSERT INTO notification_history (
+                fingerprint, first_notified_at, last_seen_at, url, application_url,
+                title, company, location, fit_score
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(fingerprint) DO UPDATE SET
+                last_seen_at=excluded.last_seen_at,
+                url=COALESCE(excluded.url, notification_history.url),
+                application_url=COALESCE(excluded.application_url, notification_history.application_url),
+                title=COALESCE(excluded.title, notification_history.title),
+                company=COALESCE(excluded.company, notification_history.company),
+                location=COALESCE(excluded.location, notification_history.location),
+                fit_score=excluded.fit_score
+            """,
+            (
+                fingerprint,
+                notified_at,
+                notified_at,
+                job.get("url"),
+                job.get("application_url"),
+                job.get("title"),
+                job.get("company"),
+                job.get("location"),
+                job.get("fit_score"),
+            ),
+        )
+
+
+def _backfill_notification_history(conn) -> None:
+    """Seed fingerprint table from rows notified before the history table existed."""
+    ensure_notification_history(conn)
+    rows = conn.execute("""
+        SELECT title, company, site, location, fit_score, application_url, url, notified_at
+        FROM jobs
+        WHERE notified_at IS NOT NULL
+          AND notified_at != ''
+    """).fetchall()
+    for row in rows:
+        job = dict(row)
+        _record_notification_history(conn, job, job["notified_at"])
+    conn.commit()
+
+
+def _fetch_pending_jobs(min_score: int) -> PendingJobs:
     """Query DB for newly scored jobs at or above the threshold.
 
-    NOTE: Does NOT require cover_letter_path — fetches ALL scored jobs.
-    Cover letters are optional; score-7 jobs don't need them.
+    Returns both actual pending jobs and rows marked notified by durable history
+    suppression. That split is the operator UX fix: DB advancement is not the
+    same as Telegram delivery.
     """
     conn = get_connection()
+    _backfill_notification_history(conn)
     rows = conn.execute("""
         SELECT title, company, site, location, fit_score, salary,
                description, full_description,
@@ -83,19 +231,34 @@ def _fetch_pending_jobs(min_score: int) -> list[dict]:
     """, (min_score,)).fetchall()
 
     if not rows:
-        return []
+        return PendingJobs(jobs=[])
 
     # Deduplicate by (normalized title, company) — keep highest score per role+company
+    # and suppress anything already sent in a previous digest, even if a board
+    # reposted it under a fresh URL overnight.
     seen: dict[tuple[str, str], dict] = {}
+    history_suppressed = 0
     for r in rows:
         job = dict(r)
+        if _is_previously_notified(conn, job):
+            now = datetime.now(timezone.utc).isoformat()
+            conn.execute(
+                "UPDATE jobs SET notified_at = ?, notify_error = NULL WHERE url = ?",
+                (now, job.get("url")),
+            )
+            conn.commit()
+            history_suppressed += 1
+            continue
         title_key = (job["title"] or "").lower().strip().rstrip("/")
         company_key = (job.get("company") or "").lower().strip()
         key = (title_key, company_key)
         if key not in seen or job["fit_score"] > seen[key]["fit_score"]:
             seen[key] = job
 
-    return sorted(seen.values(), key=lambda j: j["fit_score"], reverse=True)
+    return PendingJobs(
+        jobs=sorted(seen.values(), key=lambda j: j["fit_score"], reverse=True),
+        history_suppressed=history_suppressed,
+    )
 
 
 def _html_escape(text: str) -> str:
@@ -104,7 +267,7 @@ def _html_escape(text: str) -> str:
 
 _DESCRIPTION_HEADING_RE = re.compile(
     r"\b(about\s+(the\s+)?company|about\s+us|company\s+description|job\s+description|"
-    r"the\s+role|role\s+overview|what\s+you'?ll\s+do|responsibilities|requirements)\b\s*:?",
+    r"the\s+role|role\s+overview|what\s+you'?ll\s+do|responsibilities|requirements)\b\s*:?,?",
     re.IGNORECASE,
 )
 _DESCRIPTION_SIGNAL_RE = re.compile(
@@ -180,34 +343,34 @@ _CLOSED_INDICATORS = [
 
 def _is_job_still_active(url: str, timeout: int = 3) -> tuple[bool, str]:
     """Quick check if a job posting is still accepting applications.
-    
+
     Returns: (is_active, reason_if_closed)
     """
     if not url:
         return True, ""  # No URL to check, assume active
-    
+
     import httpx
     try:
         resp = httpx.get(url, follow_redirects=True, timeout=timeout,
                         headers={"User-Agent": "Mozilla/5.0 (compatible; JobMatch/1.0)"})
-        
+
         # HTTP status codes that mean gone
         if resp.status_code == 404:
             return False, "HTTP 404 (not found)"
         if resp.status_code == 410:
             return False, "HTTP 410 (gone)"
-        
+
         # 403 = anti-bot wall (Indeed, Glassdoor, etc.), NOT a closed job
         # Assume active and let the user decide when they click
         if resp.status_code == 403:
             return True, "403 (bot-blocked, assume active)"
-        
+
         # Check page content for closed indicators
         text = resp.text[:5000].lower()
         for indicator in _CLOSED_INDICATORS:
             if indicator in text:
                 return False, f"closed indicator: '{indicator}'"
-        
+
         return True, ""
     except Exception as e:
         # Network error — don't block, just warn
@@ -243,14 +406,15 @@ def _format_7_line(job: dict) -> str:
     return line
 
 
-def _send_7s_list(jobs: list[dict], conn) -> int:
+def _send_7s_list(jobs: list[dict], conn) -> tuple[int, int]:
     """Send score-7 jobs as a compact grouped list, batched to 4096 chars.
-    
+
     Checks each job's posting URL to verify it's still accepting applications.
     Skips closed/expired postings.
     """
     # Pre-filter: check which jobs are still active
     active_jobs = []
+    closed_marked = 0
     for job in jobs:
         url = job.get("application_url") or job.get("url", "")
         is_active, close_reason = _is_job_still_active(url)
@@ -261,11 +425,12 @@ def _send_7s_list(jobs: list[dict], conn) -> int:
                 "UPDATE jobs SET notified_at = ?, notify_error = ? WHERE url = ?",
                 (datetime.now(timezone.utc).isoformat(), f"posting closed: {close_reason}", job.get("url")),
             )
-    if active_jobs:
+            closed_marked += 1
+    if closed_marked:
         conn.commit()
 
     if not active_jobs:
-        return 0
+        return 0, closed_marked
 
     header_text = f"📋 <b>Score 7 — {len(active_jobs)} jobs (compact list)</b>"
     lines = [header_text, ""]
@@ -284,12 +449,14 @@ def _send_7s_list(jobs: list[dict], conn) -> int:
         _send_telegram_message("\n".join(lines))
 
     for job in active_jobs:
+        notified_at = datetime.now(timezone.utc).isoformat()
         conn.execute(
             "UPDATE jobs SET notified_at = ?, notify_error = NULL WHERE url = ?",
-            (datetime.now(timezone.utc).isoformat(), job.get("url")),
+            (notified_at, job.get("url")),
         )
+        _record_notification_history(conn, job, notified_at)
     conn.commit()
-    return len(jobs)
+    return len(active_jobs), closed_marked
 
 
 # ---------------------------------------------------------------------------
@@ -397,14 +564,15 @@ class TelegramNotifier(Notifier):
     def label(self) -> str:
         return "telegram"
 
-    def send_digest(self, min_score: int = _NOTIFY_THRESHOLD) -> int:
+    def send_digest(self, min_score: int = _NOTIFY_THRESHOLD) -> NotifyReport:
         min_score = max(min_score, _NOTIFY_THRESHOLD)
-        jobs = _fetch_pending_jobs(min_score)
+        pending = _fetch_pending_jobs(min_score)
+        jobs = pending.jobs
+        report = NotifyReport(notifier=self.label(), history_suppressed=pending.history_suppressed)
         if not jobs:
-            return 0
+            return report
 
         conn = get_connection()
-        sent = 0
 
         # --- Header ---
         header = (
@@ -417,13 +585,12 @@ class TelegramNotifier(Notifier):
         # --- High scorers only: compact individual job cards ---
         _STAGGER = [1, 3, 2, 5, 1, 4, 2, 3, 1, 5]
         _stagger_idx = 0
-        _skipped_closed = 0
         for job in jobs:
             # Check if job is still accepting applications
             url = job.get("application_url") or job.get("url", "")
             is_active, close_reason = _is_job_still_active(url)
             if not is_active:
-                _skipped_closed += 1
+                report.closed_marked_notified += 1
                 conn.execute(
                     "UPDATE jobs SET notified_at = ?, notify_error = ? WHERE url = ?",
                     (datetime.now(timezone.utc).isoformat(), f"posting closed: {close_reason}", job.get("url")),
@@ -433,15 +600,19 @@ class TelegramNotifier(Notifier):
 
             text = _format_telegram_job(job)
             if _send_telegram_message(text):
-                sent += 1
+                report.telegram_cards_sent += 1
+                report.fresh_jobs_delivered += 1
+                notified_at = datetime.now(timezone.utc).isoformat()
                 conn.execute(
                     "UPDATE jobs SET notified_at = ?, notify_error = NULL WHERE url = ?",
-                    (datetime.now(timezone.utc).isoformat(), job.get("url")),
+                    (notified_at, job.get("url")),
                 )
+                _record_notification_history(conn, job, notified_at)
                 conn.commit()
                 time.sleep(_STAGGER[_stagger_idx % len(_STAGGER)])
                 _stagger_idx += 1
             else:
+                report.failed += 1
                 conn.execute(
                     "UPDATE jobs SET notify_error = ? WHERE url = ?",
                     ("telegram send failed", job.get("url")),
@@ -457,7 +628,7 @@ class TelegramNotifier(Notifier):
             )
             _send_telegram_message(urgent_text)
 
-        return sent
+        return report
 
 
 # ---------------------------------------------------------------------------
@@ -470,11 +641,13 @@ class ConsoleNotifier(Notifier):
     def label(self) -> str:
         return "console"
 
-    def send_digest(self, min_score: int = 7) -> int:
-        jobs = _fetch_pending_jobs(min_score)
+    def send_digest(self, min_score: int = 7) -> NotifyReport:
+        pending = _fetch_pending_jobs(min_score)
+        jobs = pending.jobs
+        report = NotifyReport(notifier=self.label(), history_suppressed=pending.history_suppressed)
         if not jobs:
             print("\n  [digest] No jobs meet threshold")
-            return 0
+            return report
 
         print(f"\n  {'=' * 60}")
         print(f"  JobMatch Digest — {len(jobs)} high-fit jobs (score ≥ {min_score})")
@@ -499,14 +672,18 @@ class ConsoleNotifier(Notifier):
                 first_line = reasoning.split("\n")[0][:120]
                 print(f"     → {first_line}")
 
+            notified_at = datetime.now(timezone.utc).isoformat()
             conn.execute(
                 "UPDATE jobs SET notified_at = ?, notify_error = NULL WHERE url = ?",
-                (datetime.now(timezone.utc).isoformat(), job.get("url")),
+                (notified_at, job.get("url")),
             )
+            _record_notification_history(conn, job, notified_at)
             conn.commit()
+            report.telegram_cards_sent += 1
+            report.fresh_jobs_delivered += 1
 
         print(f"\n  {'=' * 60}")
-        return len(jobs)
+        return report
 
 
 # ---------------------------------------------------------------------------
@@ -522,10 +699,12 @@ class FileNotifier(Notifier):
     def label(self) -> str:
         return "file"
 
-    def send_digest(self, min_score: int = 7) -> int:
-        jobs = _fetch_pending_jobs(min_score)
+    def send_digest(self, min_score: int = 7) -> NotifyReport:
+        pending = _fetch_pending_jobs(min_score)
+        jobs = pending.jobs
+        report = NotifyReport(notifier=self.label(), history_suppressed=pending.history_suppressed)
         if not jobs:
-            return 0
+            return report
 
         conn = get_connection()
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -545,13 +724,17 @@ class FileNotifier(Notifier):
                 if reasoning:
                     f.write(f"  → {reasoning.split(chr(10))[0][:120]}\n")
 
+                notified_at = datetime.now(timezone.utc).isoformat()
                 conn.execute(
                     "UPDATE jobs SET notified_at = ?, notify_error = NULL WHERE url = ?",
-                    (datetime.now(timezone.utc).isoformat(), job.get("url")),
+                    (notified_at, job.get("url")),
                 )
+                _record_notification_history(conn, job, notified_at)
                 conn.commit()
+                report.telegram_cards_sent += 1
+                report.fresh_jobs_delivered += 1
 
-        return len(jobs)
+        return report
 
 
 # ---------------------------------------------------------------------------

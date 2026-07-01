@@ -48,3 +48,5 @@ These are a migration convenience. Prefer the canonical names in new setups.
 - Remote endpoints with a blank API key are treated as **not configured**.
 - `jobmatch doctor` reports provider labels/models, not secret values.
 - Fallback providers are optional and are used automatically when the primary provider is exhausted.
+- Token-priced models record estimated USD cost when usage tokens and pricing are known.
+- Request-billed models can record `request_count` instead of fake token costs, so usage reports do not pretend unknown token prices are zero.

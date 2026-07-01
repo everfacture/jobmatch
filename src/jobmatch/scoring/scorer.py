@@ -20,7 +20,7 @@ from jobmatch.config.paths import ENV_PATH
 from jobmatch.database import current_run_id, get_connection, get_jobs_by_stage
 from jobmatch.llm.client import get_client
 from jobmatch.llm.parsing import parse_marker_lines
-from jobmatch.scoring.rules import apply_configured_hard_caps, score_by_rules
+from jobmatch.scoring.rules import apply_score_adjustments, score_by_rules
 
 # Load .env for LLM credentials
 load_dotenv(ENV_PATH, override=True)
@@ -191,7 +191,7 @@ def score_job(
         client = get_client()
         response = client.chat(messages, max_tokens=512, temperature=0.2, stage="score")
         result = _parse_score_response(response)
-        return apply_configured_hard_caps(result, job, preferences)
+        return apply_score_adjustments(result, job, preferences)
     except Exception as e:
         log.error("LLM error scoring job '%s': %s", job.get("title", "?"), e)
         return {"score": None, "fit": "", "gap": "", "keywords": "", "error": str(e)}

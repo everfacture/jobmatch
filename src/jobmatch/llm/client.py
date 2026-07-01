@@ -157,6 +157,13 @@ _PRICE_PER_MILLION: dict[str, tuple[float, float]] = {
     "gemini-2.5-flash": (0.30, 2.50),
 }
 
+# Models/providers billed by successful API request rather than tokens. Jatevo
+# GPT-5.5 is request-metered, so track request count explicitly instead of
+# inventing a fake token price.
+_REQUEST_BILLED_MODELS: set[str] = {
+    "gpt-5.5",
+}
+
 
 def _maybe_prepend_no_think(messages: list[dict]) -> list[dict]:
     """Prepend /no_think to the first user message for Qwen models.
@@ -355,12 +362,17 @@ class LLMClient:
         input_price, output_price = prices
         return (prompt_tokens / 1_000_000 * input_price) + (completion_tokens / 1_000_000 * output_price)
 
+    @staticmethod
+    def _request_count(model: str) -> int | None:
+        return 1 if model.lower().strip() in _REQUEST_BILLED_MODELS else None
+
     def _record_usage(self, entry: ModelEntry, data: dict, stage: str, elapsed: float) -> None:
         usage = data.get("usage") or {}
         prompt_tokens = usage.get("prompt_tokens")
         completion_tokens = usage.get("completion_tokens")
         total_tokens = usage.get("total_tokens")
         estimated_cost = self._estimate_cost(entry.name, prompt_tokens, completion_tokens)
+        request_count = self._request_count(entry.name)
         try:
             from jobmatch.database import record_llm_usage
             record_llm_usage(
@@ -371,6 +383,7 @@ class LLMClient:
                 completion_tokens=completion_tokens,
                 total_tokens=total_tokens,
                 estimated_cost_usd=estimated_cost,
+                request_count=request_count,
                 elapsed_ms=int(elapsed * 1000),
                 success=True,
             )

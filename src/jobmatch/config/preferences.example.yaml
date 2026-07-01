@@ -37,6 +37,16 @@ scoring:
       patterns: ["must relocate", "onsite only"]
       max_score: 5
 
+  # Optional positive adjustments after normal scoring. Use these for locations
+  # or search lanes you genuinely prefer. Boosts never rescue weak matches below
+  # min_base_score and never exceed max_score.
+  location_boosts:
+    - name: "preferred_region"
+      patterns: ["Remote", "Hybrid", "New York"]
+      points: 1
+      min_base_score: 8
+      max_score: 10
+
   dealbreakers:
     - "unpaid"
     - "commission only"
