@@ -315,8 +315,8 @@ def run_pipeline(
         try:
             from jobmatch.notify import get_notifier
             notifier = get_notifier()
-            sent = notifier.send_digest(min_score=min_score)
-            console.print(f"\n  [green]Notification:[/green] sent {sent} jobs via {notifier.label()}")
+            report = notifier.send_digest(min_score=min_score)
+            console.print(f"\n  [green]Notification:[/green] {report.summary_line()}")
         except Exception as e:
             log.warning("Notification failed: %s", e)
     # --- END NOTIFY HOOK ---

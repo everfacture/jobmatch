@@ -74,7 +74,6 @@ def apply_configured_hard_caps(result: dict, job: dict, preferences: dict[str, A
     score = result.get("score")
     if score is None:
         return result
-
     prefs = scoring_preferences(preferences)
     if not prefs:
         return result
@@ -99,6 +98,61 @@ def apply_configured_hard_caps(result: dict, job: dict, preferences: dict[str, A
             capped["gap"] = (capped.get("gap", "") + f" [{note}]").strip()
             return capped
     return result
+
+
+def apply_location_boosts(result: dict, job: dict, preferences: dict[str, Any] | None) -> dict:
+    """Apply configured location boosts after normal scoring.
+
+    Runtime-only preferences can promote a good local fit without hardcoding a
+    candidate or city in source. Boosts never rescue weak/mismatched jobs below
+    ``min_base_score`` and never exceed the configured ``max_score``.
+    """
+    score = result.get("score")
+    if score is None:
+        return result
+    prefs = scoring_preferences(preferences)
+    boosts = prefs.get("location_boosts") if isinstance(prefs, dict) else None
+    if not isinstance(boosts, list):
+        return result
+
+    location_text = _clean(str(job.get("location") or ""))
+    if not location_text:
+        return result
+
+    adjusted = dict(result)
+    for boost in boosts:
+        if not isinstance(boost, dict):
+            continue
+        patterns = _items(boost.get("patterns"))
+        matched = _matched_phrases(location_text, patterns)
+        if not matched:
+            continue
+        try:
+            min_base = int(boost.get("min_base_score", 8))
+            points = int(boost.get("points", 1))
+            max_score = int(boost.get("max_score", 10))
+        except (TypeError, ValueError):
+            continue
+        if score < min_base:
+            continue
+        new_score = max(1, min(10, min(max_score, score + points)))
+        if new_score <= score:
+            continue
+        adjusted["score"] = new_score
+        label = boost.get("name") or ", ".join(matched[:2])
+        note = f"location boost: {label}"
+        adjusted["fit"] = (adjusted.get("fit", "") + f"\n- {note}").strip()
+        keywords = adjusted.get("keywords", "")
+        extra = ", ".join(matched[:3])
+        adjusted["keywords"] = f"{keywords}, {extra}".strip(" ,")
+        score = new_score
+    return adjusted
+
+
+def apply_score_adjustments(result: dict, job: dict, preferences: dict[str, Any] | None) -> dict:
+    """Apply post-scoring preference adjustments in safe order."""
+    capped = apply_configured_hard_caps(result, job, preferences)
+    return apply_location_boosts(capped, job, preferences)
 
 
 def _job_text(job: dict) -> str:

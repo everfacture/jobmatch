@@ -1,4 +1,4 @@
-from jobmatch.scoring.rules import apply_configured_hard_caps, score_by_rules
+from jobmatch.scoring.rules import apply_configured_hard_caps, apply_score_adjustments, score_by_rules
 
 
 PREFERENCES = {
@@ -88,3 +88,47 @@ def test_rules_leave_ambiguous_product_role_to_llm():
     }, PREFERENCES)
 
     assert result is None
+
+
+def test_apply_score_adjustments_boosts_configured_location():
+    preferences = {
+        "scoring": {
+            "location_boosts": [
+                {
+                    "name": "east_java_priority",
+                    "patterns": ["Surabaya", "Sidoarjo", "East Java"],
+                    "points": 1,
+                    "min_base_score": 8,
+                    "max_score": 10,
+                }
+            ]
+        }
+    }
+
+    result = apply_score_adjustments(
+        {"score": 8, "fit": "Strong admin fit", "gap": "", "keywords": "admin", "error": None},
+        {"title": "Admin Staff", "location": "Surabaya, East Java, Indonesia"},
+        preferences,
+    )
+
+    assert result["score"] == 9
+    assert "location boost" in result["fit"]
+    assert "Surabaya" in result["keywords"]
+
+
+def test_apply_score_adjustments_does_not_boost_weak_location_match():
+    preferences = {
+        "scoring": {
+            "location_boosts": [
+                {"name": "east_java_priority", "patterns": ["Surabaya"], "points": 1, "min_base_score": 8}
+            ]
+        }
+    }
+
+    result = apply_score_adjustments(
+        {"score": 6, "fit": "Weak", "gap": "", "keywords": "", "error": None},
+        {"title": "Admin Staff", "location": "Surabaya, East Java, Indonesia"},
+        preferences,
+    )
+
+    assert result["score"] == 6

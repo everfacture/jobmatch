@@ -17,6 +17,10 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
     datefmt="%H:%M:%S",
 )
+# httpx INFO logs include full request URLs. Telegram Bot API URLs contain the
+# bot token, so keep dependency transport logs out of operator output.
+for noisy_logger in ("httpx", "httpcore"):
+    logging.getLogger(noisy_logger).setLevel(logging.WARNING)
 
 app = typer.Typer(
     name="jobmatch",
