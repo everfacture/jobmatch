@@ -1,6 +1,21 @@
 # JobMatch Quickstart
 
-This is the no-drama setup path. It assumes you can open a terminal and copy/paste commands.
+This is the no-drama setup path.
+
+## Double-click (no terminal)
+
+1. Download https://github.com/everfacture/jobmatch/archive/refs/heads/main.zip
+2. Unzip
+3. Windows: double-click `Start JobMatch.bat`. Mac: double-click `Start JobMatch.command`.
+4. Leave that window open. A browser tab is the app.
+
+First launch installs Python, JobMatch, and a browser engine. Needs internet once.
+
+---
+
+## Terminal setup
+
+This path assumes you can copy/paste commands.
 
 ## What you need
 
@@ -63,7 +78,13 @@ playwright install chromium
 
 ## 2. Create your config
 
-`jobmatch init` is interactive. Have a `.txt` or `.pdf` resume file ready before you start. For a first smoke test, press Enter for defaults and leave optional AI/manual-apply helpers off. You can add provider keys later in `~/.jobmatch/.env`.
+`jobmatch init` is the short path. Have a `.txt` or `.pdf` resume ready. It asks for your name, where you want to work, the job titles you want, then one AI key (DeepSeek, OpenAI, OpenRouter, or Groq). If Codex is already on the computer it will say so; you still paste a scoring key because ChatGPT login is not an app API.
+
+Long form (extra profile fields, apply helpers):
+
+```bash
+jobmatch init --advanced
+```
 
 Run:
 

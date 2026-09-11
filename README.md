@@ -24,6 +24,22 @@ It is **not** a hosted SaaS, not an auto-apply bot, and not a recruiter. It is a
 
 ---
 
+## Download and double-click
+
+You do not need to know what a terminal is.
+
+1. Download the zip from [GitHub](https://github.com/everfacture/jobmatch/archive/refs/heads/main.zip)
+2. Unzip it
+3. Double-click **Start JobMatch**
+   - Windows: `Start JobMatch.bat`
+   - Mac: `Start JobMatch.command` (if Mac blocks it: right-click → Open)
+4. First launch downloads Python and extras. That can take a few minutes. Leave the window open.
+5. Your browser opens a local screen. Paste CV, jobs, one AI key. Click find jobs.
+
+The black/Terminal window is the engine. Closing it quits JobMatch. Nothing is hosted on our servers.
+
+---
+
 ## What you get
 
 JobMatch gives you a ranked shortlist instead of a pile of tabs.
@@ -73,7 +89,7 @@ playwright install chromium
 
 ### First run
 
-`jobmatch init` is interactive. Have a `.txt` or `.pdf` resume path ready. For a first smoke test, press Enter for defaults and leave optional AI/manual-apply helpers off; you can add provider keys later in `~/.jobmatch/.env`.
+`jobmatch init` is the short path. Have a `.txt` or `.pdf` resume ready. It asks for your name, jobs you want, and one AI key (DeepSeek / OpenAI / OpenRouter / Groq). Codex on the same laptop is detected but scoring still needs a key. Long form: `jobmatch init --advanced`.
 
 ```bash
 jobmatch init
@@ -309,21 +325,23 @@ See [`docs/PRIVACY.md`](docs/PRIVACY.md) and [`SECURITY.md`](SECURITY.md).
 
 ## For non-technical users
 
-This is easier than building your own job pipeline. It is not easier than opening a website.
+This is easier than building your own job pipeline. It is still a program you run on your computer, not a website you click.
 
 You still need to:
 
 1. install Python 3.11, 3.12, or 3.13
 2. install Git
-3. run terminal commands
-4. edit a few text files
-5. add an AI provider key
+3. run a few terminal commands
+4. paste one AI key (DeepSeek is the cheap default)
 
-If that sounds painful, ask someone technical to set it up once. After that, the normal loop is just:
+Then:
 
 ```bash
+jobmatch init
 jobmatch run
 ```
+
+The shortlist should open in your browser. It does not auto-apply. Telegram is optional later.
 
 ---
 

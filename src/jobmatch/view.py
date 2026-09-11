@@ -10,6 +10,8 @@ Generates a self-contained HTML dashboard with:
 
 from __future__ import annotations
 
+import os
+import sys
 import webbrowser
 from html import escape
 from pathlib import Path
@@ -20,6 +22,20 @@ from jobmatch.config import APP_DIR
 from jobmatch.database import get_connection
 
 console = Console()
+
+
+def should_open_dashboard(*, isatty: bool | None = None) -> bool:
+    """Open the local HTML shortlist after a run on interactive machines.
+
+    Cron/SSH-without-TTY stays quiet. JOBMATCH_OPEN_DASHBOARD=0/1 overrides.
+    """
+    flag = os.environ.get("JOBMATCH_OPEN_DASHBOARD", "").strip().lower()
+    if flag in ("0", "false", "no"):
+        return False
+    if flag in ("1", "true", "yes"):
+        return True
+    tty = sys.stdout.isatty() if isatty is None else isatty
+    return bool(tty)
 
 
 def generate_dashboard(output_path: str | None = None) -> str:
