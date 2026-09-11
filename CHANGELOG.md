@@ -4,6 +4,13 @@ All notable public changes to JobMatch.
 
 ## Unreleased
 
+- Default `jobmatch init` is a short civilian path: resume, a few facts, job titles, then paste one scoring key.
+- Detect local Codex/ChatGPT CLI login for doctor/setup status. Scoring still uses a DeepSeek, OpenAI, OpenRouter, or Groq API key — Codex login is not an official third-party API.
+- After an interactive `jobmatch run`, open the local HTML shortlist in the browser. Cron/non-TTY stays quiet. Override with `JOBMATCH_OPEN_DASHBOARD=0/1`.
+- New setups default the notifier to console, not Telegram.
+- Long form remains as `jobmatch init --advanced`.
+- Added a local browser app (`jobmatch app`) and double-click launchers (`Start JobMatch.bat` / `Start JobMatch.command`) that install Python, dependencies, and Chromium on first run.
+
 - Added durable notification history to suppress reposted digest jobs across changed URLs.
 - Split notifier reporting into explicit counters for cards sent, duplicate/history suppression, closed postings, and failures.
 - Added request-count accounting for request-billed LLM routes instead of fake token-cost estimates.

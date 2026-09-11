@@ -61,8 +61,8 @@ def check_tier(required: int, feature: str) -> None:
     missing: list[str] = []
     if required >= 2 and not _has_llm_config():
         missing.append(
-            "LLM provider — run [bold]jobmatch init[/bold] or set "
-            "JOBMATCH_LLM_BASE_URL + JOBMATCH_LLM_API_KEY"
+            "LLM provider — run [bold]jobmatch init[/bold] and paste a "
+            "DeepSeek, OpenAI, OpenRouter, or Groq key"
         )
 
     _console.print(

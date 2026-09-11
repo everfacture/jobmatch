@@ -134,6 +134,10 @@ Expected output: empty.
 - Keep examples generic and reusable.
 - Prefer tests around database/query behaviour before restructuring `database.py`.
 - Keep docs usable for non-technical users.
+- Default `jobmatch init` is the short civilian path. Keep `--advanced` for the long form.
+- Detect local Codex for doctor/setup status only. Do not treat ChatGPT/Codex OAuth as a scoring provider. Scoring stays OpenAI-compatible API keys.
+- After interactive runs, opening the local HTML dashboard is allowed. Do not open it from cron/non-TTY unless `JOBMATCH_OPEN_DASHBOARD=1`.
+- The civilian GUI is `jobmatch app` (localhost only). Double-click launchers live at the repo root. Do not turn this into a hosted SaaS.
 
 ## Optional cover letters
 

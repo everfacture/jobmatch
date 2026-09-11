@@ -84,11 +84,28 @@ def main(
 
 
 @app.command()
-def init() -> None:
-    """Run the first-time setup wizard (profile, resume, search config)."""
+def init(
+    advanced: bool = typer.Option(
+        False,
+        "--advanced",
+        help="Long setup: extra profile fields, apply helpers, extra providers.",
+    ),
+) -> None:
+    """Short first-time setup. Use --advanced for the long form."""
     from jobmatch.wizard.init import run_wizard
 
-    run_wizard()
+    run_wizard(advanced=advanced)
+
+
+@app.command("app")
+def open_app(
+    port: int = typer.Option(8787, "--port", help="Local port. Browser UI only listens on this machine."),
+    no_browser: bool = typer.Option(False, "--no-browser", help="Do not open a browser."),
+) -> None:
+    """Open the local JobMatch screen in your browser. No command line needed after that."""
+    from jobmatch.app import serve
+
+    serve(port=port, open_browser=not no_browser)
 
 
 @app.command()
@@ -173,6 +190,15 @@ def run(
         rescore=rescore,
         with_resume=with_resume,
     )
+
+    if not dry_run:
+        from jobmatch.view import should_open_dashboard, open_dashboard
+
+        if should_open_dashboard():
+            try:
+                open_dashboard()
+            except Exception as exc:
+                log.warning("Dashboard open skipped: %s", exc)
 
     exit_code = 1 if result.get("errors") else 0
 
@@ -353,7 +379,23 @@ def doctor() -> None:
         results.append((
             "LLM provider",
             fail_mark,
-            "Set JOBMATCH_LLM_BASE_URL + JOBMATCH_LLM_API_KEY in ~/.jobmatch/.env",
+            "Run 'jobmatch init' and paste a DeepSeek, OpenAI, OpenRouter, or Groq key",
+        ))
+
+    from jobmatch.llm.codex_local import detect_local_codex
+
+    codex = detect_local_codex()
+    if codex.detected:
+        results.append((
+            "Codex on this computer",
+            ok_mark,
+            f"{codex.status_label()} — scoring still uses an API key, not ChatGPT login",
+        ))
+    else:
+        results.append((
+            "Codex on this computer",
+            "[dim]optional[/dim]",
+            "Not required. Paste a DeepSeek/OpenAI/OpenRouter/Groq key in init.",
         ))
 
     # CapSolver (optional — for enrichment tier 3)

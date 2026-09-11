@@ -29,6 +29,8 @@ from jobmatch.config import (
     SEARCH_CONFIG_PATH,
     ensure_dirs,
 )
+from jobmatch.llm.codex_local import detect_local_codex
+from jobmatch.llm.providers import SIMPLE_PROVIDER_CHOICES, SIMPLE_PROVIDERS, render_llm_env
 
 console = Console()
 
@@ -182,9 +184,133 @@ def _setup_profile() -> dict:
     return profile
 
 
+def build_simple_profile(
+    *,
+    full_name: str,
+    email: str,
+    city: str,
+    country: str,
+    target_role: str,
+) -> dict:
+    """Minimal profile.json that scoring/tailoring can still read."""
+    name = full_name.strip()
+    role = target_role.strip()
+    return {
+        "personal": {
+            "full_name": name,
+            "preferred_name": name.split()[0] if name else "",
+            "email": email.strip(),
+            "phone": "",
+            "city": city.strip(),
+            "province_state": "",
+            "country": country.strip(),
+            "postal_code": "",
+            "address": "",
+            "linkedin_url": "",
+            "github_url": "",
+            "portfolio_url": "",
+            "website_url": "",
+        },
+        "work_authorization": {
+            "legally_authorized_to_work": True,
+            "require_sponsorship": False,
+            "work_permit_type": "",
+        },
+        "availability": {"earliest_start_date": "Immediately"},
+        "compensation": {
+            "salary_expectation": "",
+            "salary_currency": "USD",
+            "salary_range_min": "",
+            "salary_range_max": "",
+        },
+        "experience": {
+            "years_of_experience_total": "",
+            "education_level": "",
+            "current_title": "",
+            "target_role": role,
+        },
+        "skills_boundary": {
+            "programming_languages": [],
+            "frameworks": [],
+            "tools": [],
+        },
+        "resume_facts": {
+            "preserved_companies": [],
+            "preserved_projects": [],
+            "preserved_school": "",
+            "real_metrics": [],
+        },
+        "eeo_voluntary": {
+            "gender": "Decline to self-identify",
+            "race_ethnicity": "Decline to self-identify",
+            "veteran_status": "Decline to self-identify",
+            "disability_status": "Decline to self-identify",
+        },
+    }
+
+
+def _setup_profile_simple() -> dict:
+    """Short civilian profile — name, contact, place. Jobs come next."""
+    console.print(Panel("[bold]Step 2: You[/bold]\nA few facts. This stays on this computer."))
+    full_name = Prompt.ask("Your name")
+    email = Prompt.ask("Email")
+    city = Prompt.ask("City", default="")
+    country = Prompt.ask("Country")
+    target_role = Prompt.ask("Main job title you want", default="")
+    profile = build_simple_profile(
+        full_name=full_name,
+        email=email,
+        city=city,
+        country=country,
+        target_role=target_role,
+    )
+    PROFILE_PATH.write_text(json.dumps(profile, indent=2, ensure_ascii=False), encoding="utf-8")
+    console.print(f"\n[green]Profile saved to {PROFILE_PATH}[/green]")
+    return profile
+
+
 # ---------------------------------------------------------------------------
 # Search config
 # ---------------------------------------------------------------------------
+
+def _setup_searches_simple(default_role: str = "") -> list[str]:
+    """Civilian search setup: where + job titles. No radius jargon."""
+    console.print(Panel("[bold]Step 3: Jobs[/bold]\nType the jobs you want. Comma-separated is fine."))
+    location = Prompt.ask("Where? (city or Remote)", default="Remote")
+    roles_raw = Prompt.ask("Job titles you want", default=default_role)
+    roles = [r.strip() for r in roles_raw.split(",") if r.strip()]
+    if not roles:
+        roles = [default_role.strip()] if default_role.strip() else ["Software Engineer"]
+        console.print(f"[yellow]No titles typed. Using {roles[0]}.[/yellow]")
+    remote = location.strip().casefold() in {"remote", "anywhere", "wfh"}
+    distance = 0 if remote else 25
+    lines = [
+        "# JobMatch search configuration",
+        "# Edit this file to refine your job search queries.",
+        "",
+        "defaults:",
+        f'  location: "{location}"',
+        f"  distance: {distance}",
+        "  hours_old: 72",
+        "  results_per_site: 50",
+        "",
+        "boards:",
+        "  - linkedin",
+        "",
+        "locations:",
+        f'  - location: "{location}"',
+        f'    label: "{location}"',
+        f"    remote: {str(remote).lower()}",
+        "",
+        "queries:",
+    ]
+    for i, role in enumerate(roles):
+        lines.append(f'  - query: "{role}"')
+        lines.append(f"    tier: {min(i + 1, 3)}")
+    SEARCH_CONFIG_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    console.print(f"[green]Search config saved to {SEARCH_CONFIG_PATH}[/green]")
+    return roles
+
 
 def _setup_searches() -> list[str]:
     """Generate a searches.yaml from user input."""
@@ -310,8 +436,16 @@ def build_preferences_yaml(
     return yaml.safe_dump(preferences, sort_keys=False, allow_unicode=True)
 
 
-def _setup_preferences(profile: dict, roles: list[str]) -> None:
+def _setup_preferences(profile: dict, roles: list[str], *, auto: bool = False) -> None:
     """Generate a starter preferences.yaml for deterministic scoring guardrails."""
+    if auto:
+        PREFERENCES_PATH.write_text(
+            build_preferences_yaml(profile, roles),
+            encoding="utf-8",
+        )
+        console.print(f"[green]Scoring preferences saved to {PREFERENCES_PATH}[/green]")
+        return
+
     console.print(Panel(
         "[bold]Step 4: Scoring Preferences[/bold]\n"
         "These rules cut noise and reduce paid AI scoring calls. You can edit them later."
@@ -357,6 +491,69 @@ def _setup_preferences(profile: dict, roles: list[str]) -> None:
 # AI Features
 # ---------------------------------------------------------------------------
 
+def _write_console_only_env() -> None:
+    ENV_PATH.write_text(
+        "# JobMatch private secrets\n"
+        "# Generated by jobmatch init. Do not commit this file.\n"
+        "\n"
+        "JOBMATCH_NOTIFIER=console\n",
+        encoding="utf-8",
+    )
+
+
+def _setup_ai_simple() -> None:
+    """Civilian AI setup: detect Codex, paste one of four API keys."""
+    console.print(Panel(
+        "[bold]Step 4: AI scoring[/bold]\n"
+        "Paste one API key so JobMatch can rank jobs against your CV.\n"
+        "Your CV stays on this computer. Scoring text goes to the provider you pick."
+    ))
+    codex = detect_local_codex()
+    if codex.detected:
+        console.print(
+            f"[green]Codex found on this computer[/green] ({codex.status_label()}).\n"
+            "[dim]ChatGPT/Codex login is not an official plug-in API for other apps,\n"
+            "so scoring still needs a normal key. DeepSeek is cheapest.[/dim]"
+        )
+    else:
+        console.print("[dim]No local Codex login found. Paste a key from the list below.[/dim]")
+
+    if not Confirm.ask("Add a scoring key now?", default=True):
+        _write_console_only_env()
+        console.print("[dim]Discovery-only for now. Re-run [bold]jobmatch init[/bold] to add a key.[/dim]")
+        return
+
+    console.print(
+        "Pick one:\n"
+        "  [bold]deepseek[/bold]   cheap, good default  "
+        f"{SIMPLE_PROVIDERS['deepseek'].key_url}\n"
+        "  [bold]openai[/bold]     official OpenAI key  "
+        f"{SIMPLE_PROVIDERS['openai'].key_url}\n"
+        "  [bold]openrouter[/bold] one key, many models  "
+        f"{SIMPLE_PROVIDERS['openrouter'].key_url}\n"
+        "  [bold]groq[/bold]       fast free-tier-ish   "
+        f"{SIMPLE_PROVIDERS['groq'].key_url}"
+    )
+    provider = Prompt.ask(
+        "Provider",
+        choices=list(SIMPLE_PROVIDER_CHOICES),
+        default="deepseek",
+    )
+    preset = SIMPLE_PROVIDERS[provider]
+    console.print(f"Get a key here: [bold]{preset.key_url}[/bold]")
+    api_key = Prompt.ask(preset.key_prompt, password=True)
+    ENV_PATH.write_text(
+        render_llm_env(
+            base_url=preset.base_url,
+            api_key=api_key,
+            model=preset.model,
+            notifier="console",
+        ),
+        encoding="utf-8",
+    )
+    console.print(f"[green]AI configuration saved to {ENV_PATH}[/green]")
+
+
 def _setup_ai_features() -> None:
     """Ask about AI scoring/tailoring — optional LLM configuration."""
     console.print(Panel(
@@ -387,12 +584,6 @@ def _setup_ai_features() -> None:
         "gemini": ("https://generativelanguage.googleapis.com/v1beta/openai", "gemini-2.0-flash", "Gemini API key"),
     }
 
-    env_lines = [
-        "# JobMatch private secrets",
-        "# Generated by jobmatch init. Do not commit this file.",
-        "",
-    ]
-
     if provider == "local":
         url = Prompt.ask("OpenAI-compatible local endpoint URL", default="http://localhost:11434/v1")
         model = Prompt.ask("Model name", default="llama3.1")
@@ -403,14 +594,15 @@ def _setup_ai_features() -> None:
         model = Prompt.ask("Model", default=default_model)
         api_key = Prompt.ask(key_prompt, password=True)
 
-    env_lines.extend([
-        f"JOBMATCH_LLM_BASE_URL={url.rstrip('/')}",
-        f"JOBMATCH_LLM_API_KEY={api_key}",
-        f"JOBMATCH_LLM_MODEL={model}",
-    ])
-
-    env_lines.append("")
-    ENV_PATH.write_text("\n".join(env_lines), encoding="utf-8")
+    ENV_PATH.write_text(
+        render_llm_env(
+            base_url=url,
+            api_key=api_key,
+            model=model,
+            notifier="console",
+        ),
+        encoding="utf-8",
+    )
     console.print(f"[green]AI configuration saved to {ENV_PATH}[/green]")
 
 
@@ -463,74 +655,98 @@ def _setup_auto_apply() -> None:
 # Main entry
 # ---------------------------------------------------------------------------
 
-def run_wizard() -> None:
-    """Run the full interactive setup wizard."""
+def run_wizard(*, advanced: bool = False) -> None:
+    """Run setup. Default path is short; --advanced keeps the long form."""
     console.print()
-    console.print(
-        Panel.fit(
+    if advanced:
+        blurb = (
             "[bold green]JobMatch Setup Wizard[/bold green]\n\n"
             "This will create your configuration at:\n"
             f"  [cyan]{APP_DIR}[/cyan]\n\n"
-            "You can re-run this anytime with [bold]jobmatch init[/bold].",
-            border_style="green",
+            "You can re-run this anytime with [bold]jobmatch init[/bold]."
         )
-    )
+    else:
+        blurb = (
+            "[bold green]JobMatch — stays on this computer[/bold green]\n\n"
+            "Resume, job list, and keys never leave your machine except\n"
+            "the scoring text you send to the AI provider you pick.\n\n"
+            f"Files go in [cyan]{APP_DIR}[/cyan]\n"
+            "Long form later: [bold]jobmatch init --advanced[/bold]"
+        )
+    console.print(Panel.fit(blurb, border_style="green"))
 
     ensure_dirs()
     console.print(f"[dim]Created {APP_DIR}[/dim]\n")
 
-    # Step 1: Resume
     _setup_resume()
     console.print()
 
-    # Step 2: Profile
-    profile = _setup_profile()
-    console.print()
+    if advanced:
+        profile = _setup_profile()
+        console.print()
+        roles = _setup_searches()
+        console.print()
+        _setup_preferences(profile, roles)
+        console.print()
+        _setup_ai_features()
+        console.print()
+        _setup_auto_apply()
+        console.print()
+    else:
+        profile = _setup_profile_simple()
+        console.print()
+        experience = profile.get("experience") if isinstance(profile, dict) else {}
+        default_role = ""
+        if isinstance(experience, dict):
+            default_role = str(experience.get("target_role") or "").strip()
+        roles = _setup_searches_simple(default_role)
+        console.print()
+        _setup_preferences(profile, roles, auto=True)
+        console.print()
+        _setup_ai_simple()
+        console.print()
 
-    # Step 3: Search config
-    roles = _setup_searches()
-    console.print()
-
-    # Step 4: scoring preferences
-    _setup_preferences(profile, roles)
-    console.print()
-
-    # Step 5: AI features (optional LLM)
-    _setup_ai_features()
-    console.print()
-
-    # Step 6: Manual apply helpers (Claude Code detection)
-    _setup_auto_apply()
-    console.print()
-
-    # Done — show tier status
     from jobmatch.config import get_tier, TIER_LABELS, TIER_COMMANDS
 
     tier = get_tier()
 
-    tier_lines: list[str] = []
-    for t in sorted(TIER_LABELS):
-        label = TIER_LABELS.get(t, f"Tier {t}")
-        cmds = ", ".join(f"[bold]{c}[/bold]" for c in TIER_COMMANDS.get(t, []))
-        if t <= tier:
-            tier_lines.append(f"  [green]✓ Tier {t} — {label}[/green]  ({cmds})")
-        elif t == tier + 1:
-            tier_lines.append(f"  [yellow]→ Tier {t} — {label}[/yellow]  ({cmds})")
-        else:
-            tier_lines.append(f"  [dim]✗ Tier {t} — {label}  ({cmds})[/dim]")
+    if advanced:
+        tier_lines: list[str] = []
+        for t in sorted(TIER_LABELS):
+            label = TIER_LABELS.get(t, f"Tier {t}")
+            cmds = ", ".join(f"[bold]{c}[/bold]" for c in TIER_COMMANDS.get(t, []))
+            if t <= tier:
+                tier_lines.append(f"  [green]✓ Tier {t} — {label}[/green]  ({cmds})")
+            elif t == tier + 1:
+                tier_lines.append(f"  [yellow]→ Tier {t} — {label}[/yellow]  ({cmds})")
+            else:
+                tier_lines.append(f"  [dim]✗ Tier {t} — {label}  ({cmds})[/dim]")
 
-    unlock_hint = ""
-    if tier == 1:
-        unlock_hint = "\n[dim]To unlock Tier 2: configure an LLM API key (re-run [bold]jobmatch init[/bold]).[/dim]"
-    elif tier == 2:
-        unlock_hint = "\n[dim]To unlock Tier 3: install Claude Code CLI + Chrome.[/dim]"
+        unlock_hint = ""
+        if tier == 1:
+            unlock_hint = "\n[dim]To unlock Tier 2: configure an LLM API key (re-run [bold]jobmatch init[/bold]).[/dim]"
+        elif tier == 2:
+            unlock_hint = "\n[dim]To unlock Tier 3: install Claude Code CLI + Chrome.[/dim]"
 
-    console.print(
-        Panel.fit(
-            "[bold green]Setup complete![/bold green]\n\n"
-            f"[bold]Your tier: Tier {tier} — {TIER_LABELS[tier]}[/bold]\n\n"
-            + "\n".join(tier_lines)
-            + unlock_hint,
-            border_style="green",
+        console.print(
+            Panel.fit(
+                "[bold green]Setup complete![/bold green]\n\n"
+                f"[bold]Your tier: Tier {tier} — {TIER_LABELS[tier]}[/bold]\n\n"
+                + "\n".join(tier_lines)
+                + unlock_hint,
+                border_style="green",
+            )
         )
+        return
+
+    next_steps = (
+        "[bold green]Setup complete.[/bold green]\n\n"
+        "Next:\n"
+        "  [bold]jobmatch doctor[/bold]\n"
+        "  [bold]jobmatch run[/bold]\n\n"
+        "The shortlist opens in your browser when a run finishes.\n"
+        "It does not auto-apply."
     )
+    if tier == 1:
+        next_steps += "\n\n[dim]No scoring key yet — discovery still works.[/dim]"
+    console.print(Panel.fit(next_steps, border_style="green"))
