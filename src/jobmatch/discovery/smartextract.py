@@ -264,20 +264,34 @@ def _extract_telegram_bali(name: str, url: str, query: str | None = None) -> lis
     if not channels:
         return []
 
-    jobs: list[dict] = []
-    seen: set[str] = set()
+    # run_smart_extract() calls every extractor once per search query, and each
+    # call takes 3-60s against Telegram from this VPS. Fetching inside that loop
+    # meant ~92 requests for a 46-query profile to re-read the same ~20 posts.
+    # Cache per process so a full run costs one fetch per channel.
+    posts_by_channel: dict[str, list[tuple[str, str, str]]] = {}
     for channel in channels:
+        if channel in _TELEGRAM_POST_CACHE:
+            posts_by_channel[channel] = _TELEGRAM_POST_CACHE[channel]
+            continue
         try:
             resp = httpx.get(f"https://t.me/s/{channel}",
                              headers={"User-Agent": UA}, timeout=30, follow_redirects=True)
             if resp.status_code != 200:
                 log.warning("Telegram %s returned %s", channel, resp.status_code)
+                posts_by_channel[channel] = []
                 continue
         except Exception as e:
             log.warning("Telegram %s fetch error: %s", channel, e)
+            posts_by_channel[channel] = []
             continue
+        parsed = _telegram_parse_posts(resp.text)
+        _TELEGRAM_POST_CACHE[channel] = parsed
+        posts_by_channel[channel] = parsed
 
-        for post_id, dt, text in _telegram_parse_posts(resp.text):
+    jobs: list[dict] = []
+    seen: set[str] = set()
+    for channel, posts in posts_by_channel.items():
+        for post_id, dt, text in posts:
             # The channel post is the only stable identity we get; without a link
             # in the post body we synthesise the public permalink.
             link = f"https://t.me/{channel}/{post_id}"
@@ -303,6 +317,10 @@ def _extract_telegram_bali(name: str, url: str, query: str | None = None) -> lis
 
     log.info("Telegram Bali: extracted %d jobs from %d channels", len(jobs), len(channels))
     return jobs
+
+
+# channel -> parsed posts, reused across the per-query extractor loop.
+_TELEGRAM_POST_CACHE: dict[str, list[tuple[str, str, str]]] = {}
 
 
 _TELEGRAM_BALI_CHANNELS_DEFAULT = "carikerja_bali,loker_bali"
