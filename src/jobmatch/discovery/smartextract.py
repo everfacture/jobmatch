@@ -24,6 +24,7 @@ from jobmatch import config
 from jobmatch.config import CONFIG_DIR, location_ok, load_location_accept_reject
 from jobmatch.config.locations import location_accepts_remote
 from jobmatch.database import init_db, current_run_id
+from jobmatch.discovery.titlefilter import title_excluded
 
 log = logging.getLogger(__name__)
 
@@ -588,6 +589,7 @@ def _store_jobs_filtered(
     reject_locs: list[str],
     *,
     accept_remote: bool = True,
+    exclude_titles: list[str] | None = None,
 ) -> tuple[int, int]:
     """Store jobs with location filtering. Returns (new, existing)."""
     now = datetime.now(timezone.utc).isoformat()
@@ -599,6 +601,12 @@ def _store_jobs_filtered(
     for job in jobs:
         url = job.get("url")
         if not url:
+            continue
+        # Apply the profile's exclude_titles here too. This filter used to run
+        # only on the JobSpy path, so smart-extract sources stored rows the
+        # profile had explicitly excluded (e.g. "SITE SUPERVISOR").
+        if title_excluded(job.get("title"), exclude_titles):
+            filtered += 1
             continue
         if not location_ok(job.get("location"), accept_locs, reject_locs, accept_remote=accept_remote):
             filtered += 1
@@ -656,6 +664,7 @@ def run_smart_extract(queries: list[str] | None = None, workers: int = 1) -> dic
 
     accept_locs, reject_locs = load_location_accept_reject(search_cfg)
     accept_remote = location_accepts_remote(search_cfg)
+    exclude_titles = search_cfg.get("exclude_titles") or []
     conn = init_db()
 
     # Respect JOBMATCH_SMART_EXTRACT to limit which extractors run.
@@ -683,6 +692,7 @@ def run_smart_extract(queries: list[str] | None = None, workers: int = 1) -> dic
                         conn, jobs, extractor_name, "api_extractor",
                         accept_locs, reject_locs,
                         accept_remote=accept_remote,
+                        exclude_titles=exclude_titles,
                     )
                     total_new += new
                     total_existing += existing

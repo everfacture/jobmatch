@@ -9,7 +9,6 @@ search configuration YAML (searches.yaml) rather than being hardcoded.
 
 import logging
 import os
-import re
 import sqlite3
 import time
 from datetime import datetime, timezone
@@ -17,7 +16,9 @@ from datetime import datetime, timezone
 from jobspy import scrape_jobs
 
 from jobmatch import config
+from jobmatch.config.locations import location_accepts_remote, location_ok
 from jobmatch.database import get_connection, init_db, current_run_id
+from jobmatch.discovery.titlefilter import title_excluded as _title_excluded
 
 log = logging.getLogger(__name__)
 
@@ -151,55 +152,15 @@ def _location_label(loc: dict) -> str:
     return str(loc.get("label") or loc.get("location_label") or loc.get("name") or loc["location"])
 
 
-def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> bool:
-    """Check if a job location passes the user's location filter.
-
-    Remote jobs are always accepted. Non-remote jobs must match an accept
-    pattern and not match a reject pattern.
-    """
-    if not location:
-        return True  # unknown location -- keep it, let scorer decide
-
-    loc = location.lower()
-
-    # Remote jobs always OK
-    if any(r in loc for r in ("remote", "anywhere", "work from home", "wfh", "distributed")):
-        return True
-
-    # Reject non-remote matches
-    for r in reject:
-        if r.lower() in loc:
-            return False
-
-    # Accept matches
-    for a in accept:
-        if a.lower() in loc:
-            return True
-
-    # No match -- reject unknown
-    return False
-
-
-def _normalise_phrase(text: str | None) -> str:
-    """Normalise text for phrase-level title matching."""
-    return " ".join(re.sub(r"[^a-z0-9]+", " ", str(text or "").lower()).split())
-
-
-def _title_excluded(title: str | None, exclude_titles: list[str] | None) -> bool:
-    """Return true when a title contains a configured excluded phrase.
-
-    Uses normalised phrase matching so `intern` does not match `international`,
-    while `entry-level` and `entry level` are treated the same.
-    """
-    if not title or not exclude_titles:
-        return False
-
-    title_norm = f" {_normalise_phrase(title)} "
-    for phrase in exclude_titles:
-        phrase_norm = _normalise_phrase(phrase)
-        if phrase_norm and f" {phrase_norm} " in title_norm:
-            return True
-    return False
+def _location_ok(
+    location: str | None,
+    accept: list[str],
+    reject: list[str],
+    *,
+    accept_remote: bool = True,
+) -> bool:
+    """Check if a job location passes the user's location filter."""
+    return location_ok(location, accept, reject, accept_remote=accept_remote)
 
 
 # -- DB storage (JobSpy DataFrame -> SQLite) ---------------------------------
@@ -293,6 +254,7 @@ def _run_one_search(
     glassdoor_map: dict,
     country_indeed_map: dict | None = None,
     exclude_titles: list[str] | None = None,
+    accept_remote: bool = True,
 ) -> dict:
     """Run a single search query and store results in DB."""
     s = search
@@ -375,6 +337,7 @@ def _run_one_search(
     df = df[df.apply(lambda row: _location_ok(
         str(row.get("location", "")) if str(row.get("location", "")) != "nan" else None,
         accept_locs, reject_locs,
+        accept_remote=accept_remote,
     ), axis=1)]
     filtered = before - len(df)
 
@@ -505,6 +468,7 @@ def _full_crawl(
     defaults = search_cfg.get("defaults", {})
     glassdoor_map = search_cfg.get("glassdoor_location_map", {})
     accept_locs, reject_locs = _load_location_config(search_cfg)
+    accept_remote = location_accepts_remote(search_cfg)
     exclude_titles = search_cfg.get("exclude_titles") or []
 
     if tiers:
@@ -573,6 +537,7 @@ def _full_crawl(
             accept_locs, reject_locs, glassdoor_map,
             country_indeed_map=country_indeed_map,
             exclude_titles=exclude_titles,
+            accept_remote=accept_remote,
         )
         completed += 1
         total_new += result["new"]
