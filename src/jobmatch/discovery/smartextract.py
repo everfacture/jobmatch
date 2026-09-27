@@ -326,6 +326,14 @@ _TELEGRAM_POST_CACHE: dict[str, list[tuple[str, str, str]]] = {}
 
 _TELEGRAM_BALI_CHANNELS_DEFAULT = "carikerja_bali,loker_bali"
 
+# Sources whose discovery payload already contains the complete posting text, so
+# a detail-page fetch adds nothing. A Telegram channel post IS the whole job
+# advert; opening the permalink in a browser yields no extra text and just times
+# out (~60s per job). The writer promotes the post body to `full_description` and
+# stamps `detail_scraped_at`, which keeps these rows out of the pending detail
+# scrape (`detail_scraped_at IS NULL`) and makes them immediately scorable.
+SELF_DESCRIBING_SITES = {"Telegram Bali"}
+
 _TG_POST_RE = re.compile(
     r'data-post="([^"]+?)".*?<time datetime="([^"]+?)".*?'
     r'<div class="tgme_widget_message_text[^"]*"[^>]*>(.*?)</div>',
@@ -617,7 +625,23 @@ def _store_jobs_filtered(
             # without it staleness cannot be judged downstream. Guarded because
             # a bare jobs table (older DBs, minimal test fixtures) may lack it.
             cols = {r[1] for r in conn.execute("PRAGMA table_info(jobs)")}
-            if "date_posted" in cols:
+            self_describing = site in SELF_DESCRIBING_SITES
+            # Scoring reads full_description, and the pending detail scrape is
+            # selected on detail_scraped_at IS NULL. For a self-describing
+            # source the post body IS the posting, so promote it now and mark
+            # the row as already scraped. Otherwise the job waits on a browser
+            # fetch of a permalink that carries no extra text, then times out
+            # and never becomes scorable.
+            if "date_posted" in cols and self_describing and {"full_description", "detail_scraped_at"} <= cols:
+                conn.execute(
+                    "INSERT INTO jobs (url, title, company, salary, description, full_description, "
+                    "location, site, strategy, discovered_at, discovered_run_id, date_posted, detail_scraped_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (url, job.get("title"), job.get("company"), job.get("salary"), job.get("description"),
+                     job.get("description"), job.get("location"), site, strategy, now, run_id,
+                     job.get("date_posted") or None, now),
+                )
+            elif "date_posted" in cols:
                 conn.execute(
                     "INSERT INTO jobs (url, title, company, salary, description, location, site, "
                     "strategy, discovered_at, discovered_run_id, date_posted) "
