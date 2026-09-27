@@ -4,6 +4,8 @@ All notable public changes to JobMatch.
 
 ## Unreleased
 
+- Added an HHRMA Bali discovery extractor. It reads the public sitemap and job pages. The WordPress REST API is disallowed by robots.txt, so it is not used.
+
 - Default `jobmatch init` is a short civilian path: resume, a few facts, job titles, then paste one scoring key.
 - Detect local Codex/ChatGPT CLI login for doctor/setup status. Scoring still uses a DeepSeek, OpenAI, OpenRouter, or Groq API key — Codex login is not an official third-party API.
 - After an interactive `jobmatch run`, open the local HTML shortlist in the browser. Cron/non-TTY stays quiet. Override with `JOBMATCH_OPEN_DASHBOARD=0/1`.
