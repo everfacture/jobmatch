@@ -585,10 +585,24 @@ def scrape_site_batch(
 
                 if status in ("ok", "partial"):
                     stats[status] += 1
+                    new_desc = result.get("full_description")
                     conn.execute(
                         "UPDATE jobs SET full_description = ?, application_url = ?, "
                         "detail_scraped_at = ?, detail_error = NULL WHERE url = ?",
-                        (result.get("full_description"), result.get("application_url"), now, url),
+                        (new_desc, result.get("application_url"), now, url),
+                    )
+                    # Discovery writes the posting text into `description`; enrichment
+                    # re-captures the same text into `full_description`. For boards that
+                    # ship the whole posting in the search result (JobSpy/LinkedIn) the two
+                    # are byte-identical, so the row carries ~4KB of description twice.
+                    # `description` is only read at discovery time for extract_company();
+                    # every later gate and prompt uses `full_description`. Drop the twin
+                    # here, at the writer boundary, but only when it is genuinely the same
+                    # text — a scraper that returns something different keeps both.
+                    conn.execute(
+                        "UPDATE jobs SET description = NULL "
+                        "WHERE url = ? AND description IS NOT NULL AND description = ?",
+                        (url, new_desc),
                     )
                 else:
                     stats["error"] += 1
@@ -625,7 +639,7 @@ def _run_detail_scraper(
     Returns aggregate stats dict.
     """
     skip_filter = " AND ".join(f"site != '{s}'" for s in SKIP_DETAIL_SITES)
-    where = f"WHERE detail_scraped_at IS NULL AND {skip_filter}"
+    where = f"WHERE status = 'active' AND detail_scraped_at IS NULL AND {skip_filter}"
     rows = conn.execute(
         f"SELECT url, title, site FROM jobs {where} ORDER BY site"
     ).fetchall()
@@ -739,7 +753,7 @@ def stream_detail(
             skip_filter = " AND ".join(f"site != '{s}'" for s in SKIP_DETAIL_SITES)
             rows = conn.execute(
                 "SELECT url, title, site FROM jobs "
-                f"WHERE detail_scraped_at IS NULL AND {skip_filter} "
+                f"WHERE status = 'active' AND detail_scraped_at IS NULL AND {skip_filter} "
                 "ORDER BY site LIMIT 200"
             ).fetchall()
 
