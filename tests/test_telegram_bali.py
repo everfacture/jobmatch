@@ -4,6 +4,7 @@ Uses a captured HTML fixture rather than the network so the suite stays
 deterministic and offline. The fixture is a trimmed real t.me/s/ page.
 """
 
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -176,6 +177,60 @@ def test_extractor_respects_disable_switch(monkeypatch):
     monkeypatch.setenv("TELEGRAM_BALI_ENABLED", "false")
     monkeypatch.setattr(st.httpx, "get", boom)
     assert _extract_telegram_bali("Telegram Bali", "https://t.me/s/carikerja_bali") == []
+
+
+def test_self_describing_source_is_immediately_scorable(monkeypatch):
+    """Regression: Telegram jobs could never be scored.
+
+    Scoring selects `WHERE full_description IS NOT NULL` and the pending detail
+    scrape selects `detail_scraped_at IS NULL`. Discovery wrote only
+    `description`, so every Telegram job sat unscored until a browser fetch of
+    the permalink timed out (~60s each) and left full_description NULL.
+    """
+    import jobmatch.discovery.smartextract as st
+
+    monkeypatch.setattr(st, "current_run_id", lambda: 1)
+    conn = sqlite3.connect(":memory:")
+    conn.execute("""CREATE TABLE jobs (
+        id INTEGER PRIMARY KEY, url TEXT UNIQUE, title TEXT, company TEXT, salary TEXT,
+        description TEXT, full_description TEXT, location TEXT, site TEXT, strategy TEXT,
+        discovered_at TEXT, discovered_run_id INTEGER, date_posted TEXT,
+        detail_scraped_at TEXT, detail_error TEXT)""")
+    body = "FRONT OFFICE TRAINEE\nKirim CV ke: career@sensatia.com"
+    new, _ = st._store_jobs_filtered(
+        conn, [{"url": "https://t.me/carikerja_bali/1", "title": "Front Office Trainee",
+                "description": body, "location": "Bali, Indonesia", "date_posted": "2026-09-27"}],
+        "Telegram Bali", "api_extractor", ["Bali"], [], accept_remote=False,
+    )
+    assert new == 1
+    row = conn.execute(
+        "SELECT full_description, detail_scraped_at FROM jobs WHERE url = ?",
+        ("https://t.me/carikerja_bali/1",)).fetchone()
+    assert row[0] == body, "post body must land in full_description for scoring"
+    assert row[1] is not None, "must not be re-queued for a pointless detail fetch"
+
+
+def test_non_self_describing_source_waits_for_enrichment(monkeypatch):
+    """Other extractors must keep the existing behaviour."""
+    import jobmatch.discovery.smartextract as st
+
+    monkeypatch.setattr(st, "current_run_id", lambda: 1)
+    conn = sqlite3.connect(":memory:")
+    conn.execute("""CREATE TABLE jobs (
+        id INTEGER PRIMARY KEY, url TEXT UNIQUE, title TEXT, company TEXT, salary TEXT,
+        description TEXT, full_description TEXT, location TEXT, site TEXT, strategy TEXT,
+        discovered_at TEXT, discovered_run_id INTEGER, date_posted TEXT,
+        detail_scraped_at TEXT, detail_error TEXT)""")
+    st._store_jobs_filtered(
+        conn, [{"url": "https://example.com/x", "title": "Some Role",
+                "description": "short teaser", "location": "Bali, Indonesia"}],
+        "Dealls", "api_extractor", ["Bali"], [], accept_remote=False,
+    )
+    row = conn.execute(
+        "SELECT full_description, detail_scraped_at FROM jobs WHERE url = ?",
+        ("https://example.com/x",)).fetchone()
+    assert row[0] is None, "non-self-describing sources still need enrichment"
+    assert row[1] is None
 
 
 if __name__ == "__main__":
