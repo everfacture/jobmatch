@@ -131,6 +131,42 @@ def test_extracted_job_carries_date_posted(monkeypatch):
     assert shop["date_posted"] == "2026-09-26", "post date must be carried for staleness checks"
 
 
+def test_channels_fetched_once_per_process_not_per_query(monkeypatch):
+    """Regression: run_smart_extract() calls each extractor once per query.
+
+    Fetching inside that loop turned a 46-query profile into ~92 Telegram
+    requests, stalling discovery for minutes. The channel fetch must be cached
+    per process so a full run costs one request per channel.
+    """
+    import jobmatch.discovery.smartextract as st
+
+    calls = []
+
+    class FakeResp:
+        status_code = 200
+        text = PAGE
+
+    def counting_get(*a, **k):
+        calls.append(a[0] if a else k.get("url"))
+        return FakeResp()
+
+    st._TELEGRAM_POST_CACHE.clear()
+    monkeypatch.setenv("TELEGRAM_BALI_ENABLED", "true")
+    monkeypatch.setenv("JOBMATCH_TELEGRAM_CHANNELS", "carikerja_bali,loker_bali")
+    monkeypatch.setattr(st.httpx, "get", counting_get)
+
+    queries = ["admin", "front office", "staf administrasi", "resepsionis",
+               "personal assistant", "reservation", "kasir", "arsip"]
+    total = 0
+    for q in queries:
+        total += len(_extract_telegram_bali("Telegram Bali", "", q))
+
+    # 2 channels, not 2 x len(queries)
+    assert len(calls) == 2, f"expected one fetch per channel, got {len(calls)}: {calls}"
+    assert total > 0, "cached run must still return jobs"
+    st._TELEGRAM_POST_CACHE.clear()
+
+
 def test_extractor_respects_disable_switch(monkeypatch):
     import jobmatch.discovery.smartextract as st
 
