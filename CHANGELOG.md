@@ -4,6 +4,9 @@ All notable public changes to JobMatch.
 
 ## Unreleased
 
+- Removed the resume-tailoring, cover-letter and apply-pack stages (`run tailor|cover|apply`, `--with-resume`, `--validation`), their validator, 12 unused `jobs` columns, and the Chrome/CapSolver plumbing they needed. They had never produced a row in a live database. Existing databases keep the old columns; new ones are not created.
+- Removed the Dealls extractor (its job pages 404 on enrichment: 319 of 374 rows ever) and the Apify-backed Glints/Bayt/Naukri Gulf/GulfTalent/JobStreet stubs. Live custom extractors are Telegram Bali and HHRMA Bali.
+- `sites.yaml` now holds only `base_urls`; the unused site/blocklist registry is gone.
 - `WORKDAY_ENABLED=false` in `.env` skips the Workday employer crawl. Profiles that search one region have no use for a global corporate crawl that costs minutes per run.
 - A pipeline run left in `running` by a killed process is closed as `aborted` when the next run starts, so the run table no longer accumulates runs that look alive.
 - Discovery opens a LinkedIn job page only for results that are new and pass the location and title filters. Before, every result's page was fetched first, and on a mature profile 99.7% of those were already known or filtered. Live: about 12 s per search instead of about 40 s.

@@ -1,1 +1,1 @@
-"""Scoring package: job scoring (default), cover letters and tailoring (manual stages)."""
+"""Scoring package: rules-first job scoring, then LLM for the rest; dedup of scored jobs."""

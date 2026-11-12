@@ -224,7 +224,7 @@ def test_non_self_describing_source_waits_for_enrichment(monkeypatch):
     st._store_jobs_filtered(
         conn, [{"url": "https://example.com/x", "title": "Some Role",
                 "description": "short teaser", "location": "Bali, Indonesia"}],
-        "Dealls", "api_extractor", ["Bali"], [], accept_remote=False,
+        "Other Board", "api_extractor", ["Bali"], [], accept_remote=False,
     )
     row = conn.execute(
         "SELECT full_description, detail_scraped_at FROM jobs WHERE url = ?",

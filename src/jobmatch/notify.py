@@ -231,7 +231,7 @@ def _fetch_pending_jobs(min_score: int) -> PendingJobs:
         SELECT title, company, site, location, fit_score, salary,
                description, full_description,
                score_reasoning, fit_summary, gap_summary, keywords,
-               application_url, url, cover_letter_path
+               application_url, url
         FROM jobs
         WHERE status = 'active'
           AND fit_score >= ?

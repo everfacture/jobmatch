@@ -1,3 +1,3 @@
-"""JobMatch — AI-powered job discovery pipeline: discover, score, tailor, and deliver digests."""
+"""JobMatch — local job discovery pipeline: discover, enrich, score, dedup, and deliver digests."""
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"

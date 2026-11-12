@@ -2,7 +2,7 @@
 
 Both the JobSpy path and the smart-extract API path must apply the same
 `exclude_titles` rules. They used to live in `jobspy.py`, which meant every
-smart-extract source (Telegram, Dealls, HHRMA) silently bypassed them and
+smart-extract source (Telegram, HHRMA) silently bypassed them and
 stored supervisor/intern/field-sales rows that the profile had explicitly
 excluded. Keep the implementation here so there is exactly one matcher.
 """

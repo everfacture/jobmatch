@@ -191,7 +191,7 @@ Get the pipeline working locally first. Then make it fancy.
 - it does **not** guarantee every job board will scrape perfectly
 - it does **not** replace your judgment
 - it does **not** host your data in someone else's app
-- it does **not** make cover letters safe to send without review
+- it does **not** write cover letters or tailor your resume — it finds and ranks
 
 Job boards block bots. AI can be wrong. You still check the final job before applying.
 
@@ -309,9 +309,6 @@ See [`docs/PROVIDERS.md`](docs/PROVIDERS.md) for more detail.
 | `jobmatch run` | run discover/enrich/score/dedup/notify |
 | `jobmatch run score --score-limit 100 --no-notify` | cap paid scoring calls for a batch |
 | `jobmatch status` | show database counts |
-| `jobmatch run cover --min-score 8` | optional cover-letter drafts, off by default |
-
-Cover letters are drafts. Review them before sending. If you do not trust the output, do not use that stage.
 
 ---
 

@@ -1,10 +1,10 @@
-"""Smart extraction: discovers jobs via known APIs (Apify actors + Dealls REST).
+"""Custom discovery extractors for sources JobSpy does not cover.
 
-The old AI-powered generic scraping (Playwright API interception, LLM strategy
-selection, CSS selector generation) was stripped — it produced near-zero yield
-across 40 sites while burning minutes of Playwright + LLM time per run.
-
-What remains: targeted extractors for sites where we know the API.
+Each extractor is a function registered with ``register_extractor(name)`` and
+called once per search query. Enable a subset per profile with
+``JOBMATCH_SMART_EXTRACT=Name,Name`` in ``.env``; an unlisted extractor never
+runs. Live extractors: Telegram Bali (public channel mirror) and HHRMA Bali
+(sitemap + job pages). Both fetch once per process and filter in memory.
 """
 
 import html
@@ -15,13 +15,11 @@ import sqlite3
 import sys
 import time
 from datetime import UTC, date, datetime, timedelta
-from urllib.parse import parse_qs, urlparse
 
 import httpx
-import yaml
 
 from jobmatch import config
-from jobmatch.config import CONFIG_DIR, load_location_accept_reject, location_ok
+from jobmatch.config import load_location_accept_reject, location_ok
 from jobmatch.config.locations import location_accepts_remote
 from jobmatch.database import current_run_id, init_db
 from jobmatch.discovery.titlefilter import title_excluded
@@ -50,69 +48,6 @@ def register_extractor(name: str):
     return decorator
 
 
-@register_extractor("Dealls")
-def _extract_dealls(name: str, url: str, query: str | None = None) -> list[dict]:
-    """Dealls Indonesian job board — REST API, no auth needed."""
-    if os.environ.get("DEALLS_ENABLED", "true").strip().lower() in {"0", "false", "no", "off", "disabled"}:
-        log.info("Dealls disabled: DEALLS_ENABLED=false")
-        return []
-
-    if not query:
-        parsed = urlparse(url)
-        qs = parse_qs(parsed.query)
-        query = qs.get("keyword", [""])[0]
-
-    jobs: list[dict] = []
-    page = 1
-    max_pages = 5
-
-    while page <= max_pages:
-        try:
-            resp = httpx.get(
-                "https://api.sejutacita.id/v1/explore-job/job",
-                params={"keyword": query, "page": page, "per_page": 50},
-                headers={"Accept": "application/json", "User-Agent": UA},
-                timeout=30,
-            )
-            if resp.status_code != 200:
-                log.warning("Dealls API returned %s", resp.status_code)
-                break
-
-            data = resp.json()
-            docs = data.get("data", {}).get("docs", [])
-            if not docs:
-                break
-
-            for j in docs:
-                company_info = j.get("company") or {}
-                city_info = j.get("city") or {}
-                salary_range = j.get("salaryRange", {})
-                slug = j.get("slug", "")
-                company_slug = company_info.get("slug", "")
-                job_url = f"https://dealls.com/jobs/{company_slug}/{slug}" if slug and company_slug else ""
-
-                job = {
-                    "title": j.get("role", ""),
-                    "url": job_url,
-                    "company": company_info.get("name", ""),
-                    "location": city_info.get("name", ""),
-                    "salary": _format_dealls_salary(salary_range),
-                    "description": j.get("description", ""),
-                }
-                if _dealls_query_relevant(job, query):
-                    jobs.append(job)
-
-            total_pages = data.get("data", {}).get("totalPages", 1)
-            if page >= total_pages:
-                break
-            page += 1
-        except Exception as e:
-            log.warning("Dealls API error on page %d: %s", page, e)
-            break
-
-    log.info("Dealls: extracted %d relevant jobs for '%s'", len(jobs), query or "")
-    return jobs
-
 
 def _search_terms(text: str) -> set[str]:
     """Token set for loose relevance checks against noisy search APIs."""
@@ -122,122 +57,6 @@ def _search_terms(text: str) -> set[str]:
         "assistant", "asisten", "junior", "senior", "indonesia", "kerja", "lowongan",
     }
     return {w for w in words if len(w) >= 3 and w not in stop}
-
-
-_DEALLS_GENERIC_QUERY_TERMS = {
-    "admin", "assistant", "asisten", "staff", "staf", "customer", "service",
-    "product", "production", "creative", "event", "operation", "operations",
-    "development", "designer", "brand", "activation", "order", "store",
-}
-
-
-def _dealls_query_relevant(job: dict, query: str | None) -> bool:
-    """Keep only niche matches because Dealls' endpoint may ignore its keyword."""
-    terms = _search_terms(query or "")
-    # The endpoint has returned the same global/recent list for unrelated
-    # searches such as florist, hampers and visual merchandising. A match on
-    # generic title fragments like "customer service" is not evidence of a
-    # creative-lane match; require a specialist anchor from the query.
-    anchors = terms - _DEALLS_GENERIC_QUERY_TERMS
-    if not anchors:
-        return False
-    text = " ".join(str(job.get(k) or "") for k in ("title", "company", "description"))
-    haystack = _search_terms(text)
-    if anchors & haystack:
-        return True
-
-    # Keep a tiny synonym bridge for Indonesian/English pairs used in configs.
-    synonyms = {
-        "hampers": {"gift", "souvenir", "packaging", "packing", "hadiah", "parsel"},
-        "gift": {"hampers", "souvenir", "packaging", "packing", "hadiah", "parsel"},
-        "packaging": {"packing", "hampers", "gift", "box", "pita", "hadiah"},
-        "packing": {"packaging", "hampers", "gift", "box", "pita", "hadiah"},
-        "florist": {"flower", "bunga", "buket", "bouquet"},
-        "bunga": {"florist", "flower", "buket", "bouquet"},
-        "buket": {"florist", "flower", "bunga", "bouquet"},
-        "display": {"visual", "merchandiser", "merchandising", "posm", "booth"},
-        "merchandiser": {"display", "visual", "merchandising"},
-        "souvenir": {"gift", "hampers", "merchandise", "packaging", "packing"},
-    }
-    expanded = set(anchors)
-    for term in anchors:
-        expanded.update(synonyms.get(term, set()))
-    return bool(expanded & haystack)
-
-
-@register_extractor("Glints Indonesia")
-def _extract_glints(name: str, url: str, query: str | None = None) -> list[dict]:
-    """Glints Indonesia job board via Apify actor. ~$2/1000 results."""
-    if not _apify_enabled():
-        return []
-
-    api_key = os.environ.get("APIFY_API_KEY", "").strip()
-    if not api_key or api_key == "***":
-        return []
-
-    if not query:
-        return []
-
-    global _APIFY_DISABLED_FOR_RUN
-    if _APIFY_DISABLED_FOR_RUN:
-        return []
-
-    try:
-        resp = httpx.post(
-            "https://api.apify.com/v2/acts/crawlerbros~glints-scraper/run-sync-get-dataset-items",
-            params={"token": api_key},
-            json={"mode": "search", "searchQuery": query, "country": "ID", "maxItems": 25},
-            timeout=180,
-        )
-        if resp.status_code != 201:
-            body = resp.text[:500].lower()
-            if any(w in body for w in ("credit", "quota", "insufficient", "402", "429")):
-                log.warning("Glints: Apify credit-limited; disabling Apify for this run")
-                _APIFY_DISABLED_FOR_RUN = True
-            else:
-                log.warning("Glints API returned %s", resp.status_code)
-            return []
-
-        items = resp.json()
-        if not isinstance(items, list):
-            return []
-
-        jobs = []
-        for item in items:
-            # crawlerbros actor uses camelCase fields
-            title = item.get("title") or item.get("jobTitle") or ""
-            company = item.get("companyName") or item.get("company_name") or ""
-            url = item.get("url") or item.get("jobUrl") or item.get("platform_url") or ""
-            location_str = ""
-            loc = item.get("location")
-            if isinstance(loc, dict):
-                location_str = loc.get("raw") or loc.get("locality") or loc.get("city") or ""
-            elif isinstance(loc, str):
-                location_str = loc
-            desc = item.get("description") or item.get("jobDescription") or ""
-            salary = ""
-            if item.get("salary_minimum") or item.get("salaryMin"):
-                sal_min = item.get("salary_minimum") or item.get("salaryMin")
-                sal_max = item.get("salary_maximum") or item.get("salaryMax")
-                salary = _fmt_idr(sal_min)
-                if sal_max:
-                    salary += f"-{_fmt_idr(sal_max)}"
-                salary += f" {item.get('salary_currency', item.get('salaryCurrency', 'IDR'))}"
-
-            jobs.append({
-                "title": title,
-                "url": url,
-                "company": company,
-                "location": location_str,
-                "salary": salary,
-                "description": desc,
-            })
-
-        log.info("Glints: extracted %d jobs for '%s'", len(jobs), query)
-        return jobs
-    except Exception as e:
-        log.warning("Glints error: %s", e)
-        return []
 
 
 @register_extractor("Telegram Bali")
@@ -417,7 +236,7 @@ _TELEGRAM_GENERIC_TERMS = {
 def _telegram_query_relevant(title: str, body: str, query: str) -> bool:
     """Require a non-generic anchor from the query to appear in the post.
 
-    Same reasoning as the Dealls filter: these channels mix jobs with ads and
+    These channels mix jobs with ads and
     chatter, so a generic hit like "admin" is not evidence of a lane match.
     """
     terms = _search_terms(query or "")
@@ -752,167 +571,6 @@ def _extract_hhrma_bali(name: str, url: str, query: str | None = None) -> list[d
         ]
     log.info("HHRMA Bali: %d jobs for %r", len(jobs), query or "")
     return jobs
-
-
-@register_extractor("Naukri Gulf")
-def _extract_naukrigulf(name: str, url: str, query: str | None = None) -> list[dict]:
-    """Naukri Gulf via Apify actor."""
-    if not query:
-        log.warning("NaukriGulf: no search query provided — skipping")
-        return []
-    items = _apify_run("easyapi~naukrigulf-jobs-scraper", {"searchTerms": [query], "maxResults": 50}, "NaukriGulf")
-    return [j for j in (_normalize_apify(item) for item in items) if j is not None]
-
-
-@register_extractor("Bayt")
-def _extract_bayt(name: str, url: str, query: str | None = None) -> list[dict]:
-    """Bayt.com via Apify actor."""
-    if not query:
-        return []
-    items = _apify_run("easyapi~bayt-jobs-scraper", {"searchTerms": [query], "maxResults": 50}, "Bayt")
-    return [j for j in (_normalize_apify(item) for item in items) if j is not None]
-
-
-@register_extractor("GulfTalent")
-def _extract_gulftalent(name: str, url: str, query: str | None = None) -> list[dict]:
-    """GulfTalent.com via Apify actor."""
-    if not query:
-        return []
-    items = _apify_run("shahidirfan~gulftalent-job-scraper", {"searchTerms": [query], "maxResults": 50}, "GulfTalent")
-    return [j for j in (_normalize_apify(item) for item in items) if j is not None]
-
-
-@register_extractor("JobStreet Indonesia")
-def _extract_jobstreet_id(name: str, url: str, query: str | None = None) -> list[dict]:
-    """JobStreet Indonesia via Apify actor."""
-    if not query:
-        return []
-    items = _apify_run("shahidirfan~jobstreet-scraper", {"searchTerms": [query], "maxResults": 50}, "JobStreet Indonesia")
-    return [j for j in (_normalize_apify(item) for item in items) if j is not None]
-
-
-def _normalize_apify(item: dict) -> dict | None:
-    """Normalize an Apify result to standard job dict."""
-    title = item.get("title", "") or item.get("jobTitle", "")
-    if not title:
-        return None
-    return {
-        "title": title,
-        "url": item.get("url", "") or item.get("jobUrl", "") or "",
-        "company": item.get("company", "") or item.get("companyName", ""),
-        "location": item.get("location", "") or item.get("jobLocation", ""),
-        "salary": item.get("salary", "") or item.get("salaryInfo", ""),
-        "description": item.get("description", "") or item.get("jobDescription", ""),
-    }
-
-
-_APIFY_CONFIG_WARNED = False
-_APIFY_DISABLED_FOR_RUN = False
-
-
-def _apify_enabled() -> bool:
-    raw = os.environ.get("APIFY_ENABLED", "true").strip().lower()
-    return raw not in {"0", "false", "no", "off", "disabled"}
-
-
-def _apify_run(actor_id: str, payload: dict, label: str) -> list[dict]:
-    """Run an Apify actor and fetch results."""
-    global _APIFY_CONFIG_WARNED, _APIFY_DISABLED_FOR_RUN
-
-    if _APIFY_DISABLED_FOR_RUN:
-        return []
-
-    if not _apify_enabled():
-        if not _APIFY_CONFIG_WARNED:
-            log.warning("Apify-backed sources disabled: APIFY_ENABLED=false")
-            _APIFY_CONFIG_WARNED = True
-        return []
-
-    api_key = os.environ.get("APIFY_API_KEY", "").strip()
-    if not api_key or api_key == "***":
-        if not _APIFY_CONFIG_WARNED:
-            log.warning("Apify-backed sources disabled: APIFY_API_KEY is missing or still set to placeholder '***'")
-            _APIFY_CONFIG_WARNED = True
-        return []
-
-    url = f"https://api.apify.com/v2/acts/{actor_id}/runs?token={api_key}&waitForFinish=120"
-    try:
-        resp = httpx.post(url, json=payload, timeout=130)
-        if resp.status_code != 201:
-            body = resp.text[:500]
-            body_l = body.lower()
-            if resp.status_code in (402, 429) or any(word in body_l for word in ("credit", "quota", "insufficient")):
-                log.warning("%s: Apify unavailable/credit-limited (%s); disabling Apify sources for this run", label, resp.status_code)
-                _APIFY_DISABLED_FOR_RUN = True
-            else:
-                log.warning("%s: Apify API returned %s: %s", label, resp.status_code, body[:200])
-            return []
-
-        data = resp.json()
-        run_id = data.get("data", {}).get("id")
-        if not run_id:
-            log.warning("%s: no run ID in response", label)
-            return []
-
-        dataset_url = f"https://api.apify.com/v2/acts/{actor_id}/runs/{run_id}/dataset?token={api_key}&format=json"
-        results_resp = httpx.get(dataset_url, timeout=30)
-        if results_resp.status_code != 200:
-            body = results_resp.text[:500]
-            if results_resp.status_code in (402, 429) or any(word in body.lower() for word in ("credit", "quota", "insufficient")):
-                log.warning("%s: Apify dataset unavailable/credit-limited (%s); disabling Apify sources for this run", label, results_resp.status_code)
-                _APIFY_DISABLED_FOR_RUN = True
-            else:
-                log.warning("%s: dataset fetch returned %s", label, results_resp.status_code)
-            return []
-
-        items = results_resp.json()
-        if not isinstance(items, list):
-            items = list(items.values()) if isinstance(items, dict) else []
-
-        log.info("%s (Apify): got %d results", label, len(items))
-        return items
-    except Exception as e:
-        log.warning("%s Apify error: %s", label, e)
-        return []
-
-
-def _format_dealls_salary(salary_range: dict) -> str:
-    if not salary_range:
-        return ""
-    min_sal = salary_range.get("start") or salary_range.get("min")
-    max_sal = salary_range.get("end") or salary_range.get("max")
-    currency = salary_range.get("currency", "IDR")
-    if min_sal and max_sal:
-        return f"{_fmt_idr(min_sal)}-{_fmt_idr(max_sal)} {currency}"
-    if min_sal:
-        return f"{_fmt_idr(min_sal)}+ {currency}"
-    return ""
-
-
-def _fmt_idr(amount: int | float | str) -> str:
-    try:
-        n = int(float(amount))
-    except (ValueError, TypeError):
-        return str(amount)
-    if n >= 1_000_000_000:
-        return f"{n / 1_000_000_000:.0f}M"
-    if n >= 1_000_000:
-        return f"{n / 1_000_000:.0f}jt"
-    if n >= 1_000:
-        return f"{n / 1_000:.0f}K"
-    return str(n)
-
-
-# -- Site configuration from YAML --------------------------------------------
-
-def load_sites() -> list[dict]:
-    """Load scraping target sites from config/sites.yaml."""
-    path = CONFIG_DIR / "sites.yaml"
-    if not path.exists():
-        log.warning("sites.yaml not found at %s", path)
-        return []
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    return data.get("sites", [])
 
 
 def _store_jobs_filtered(

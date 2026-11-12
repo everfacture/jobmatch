@@ -44,28 +44,12 @@ console = Console()
 # ---------------------------------------------------------------------------
 
 STAGE_ORDER = ("discover", "enrich", "score", "dedup")
-STAGE_ORDER_WITH_RESUME = ("discover", "enrich", "score", "tailor", "dedup")
 
 STAGE_META: dict[str, dict] = {
     "discover": {"desc": "Job discovery (JobSpy + Workday + smart extract)"},
     "enrich":   {"desc": "Detail enrichment (full descriptions + apply URLs)"},
     "score":    {"desc": "Hybrid scoring: deterministic rules first, LLM for ambiguous jobs"},
-    "tailor":   {"desc": "Resume tailoring (LLM + validation)"},
-    "cover":    {"desc": "Manual cover letter generation (explicit stage only)"},
     "dedup":    {"desc": "Deduplicate scored jobs (keep highest score per role)"},
-    "apply":    {"desc": "Apply pack generation (HTML packs with cover letter + job details)"},
-}
-
-# Default pipeline: discover -> enrich -> score -> dedup -> notify. Cover/apply/tailor
-# are explicit manual stages.
-_UPSTREAM: dict[str, str | None] = {
-    "discover": None,
-    "enrich":   "discover",
-    "score":    "enrich",
-    "tailor":   "score",
-    "cover":    "score",
-    "dedup":    "score",
-    "apply":    "cover",
 }
 
 
@@ -75,14 +59,10 @@ _UPSTREAM: dict[str, str | None] = {
 
 # Simple 1-call stage definitions: (module_path, function_name).
 # 'discover' is special — it has multi-sub-step logic and stays as a function.
-# 'tailor' is included but only runs when with_resume=True.
 _STAGE_ACTIONS: dict[str, tuple[str, str]] = {
     "enrich": ("jobmatch.enrichment.detail", "run_enrichment"),
     "score":  ("jobmatch.scoring.scorer", "run_scoring"),
-    "tailor": ("jobmatch.scoring.tailor", "run_tailoring"),
-    "cover":  ("jobmatch.scoring.cover_letter", "run_cover_letters"),
     "dedup":  ("jobmatch.scoring.dedup", "run_dedup"),
-    "apply":  ("jobmatch.scoring.apply", "run_apply_stage"),
 }
 
 
@@ -172,9 +152,9 @@ def _run_discover(workers: int = 1) -> dict:
 # Stage resolution
 # ---------------------------------------------------------------------------
 
-def _resolve_stages(stage_names: list[str], with_resume: bool = False) -> list[str]:
-    """Resolve 'all' and validate/order stage names."""
-    order = STAGE_ORDER_WITH_RESUME if with_resume else STAGE_ORDER
+def _resolve_stages(stage_names: list[str]) -> list[str]:
+    """Resolve 'all' and validate stage names, keeping the user's order."""
+    order = STAGE_ORDER
 
     if "all" in stage_names:
         return list(order)
@@ -205,9 +185,7 @@ def run_pipeline(
     dry_run: bool = False,
     workers: int = 1,
     score_limit: int = 0,
-    validation_mode: str = "normal",
     rescore: bool = False,
-    with_resume: bool = False,
 ) -> dict:
     """Run pipeline stages sequentially.
 
@@ -217,9 +195,7 @@ def run_pipeline(
         dry_run: If True, preview stages without executing.
         workers: Number of parallel threads for discovery/enrichment/scoring stages.
         score_limit: Maximum jobs to score in this run. 0 means no cap.
-        validation_mode: strict | normal | lenient for tailor/cover stages when run explicitly.
         rescore: If True, force re-scoring of ALL jobs (not just unscored).
-        with_resume: If True, include the tailor stage.
 
     Returns:
         Dict with keys: stages (list of result dicts), errors (dict), elapsed (float).
@@ -227,7 +203,7 @@ def run_pipeline(
     # Resolve stages
     if stages is None:
         stages = ["all"]
-    ordered = _resolve_stages(stages, with_resume=with_resume)
+    ordered = _resolve_stages(stages)
 
     # Banner
     console.print()
@@ -239,7 +215,6 @@ def run_pipeline(
     console.print(f"  Workers:    {workers}")
     if score_limit > 0:
         console.print(f"  Score cap:  {score_limit}")
-    console.print(f"  Validation: {validation_mode}")
     console.print(f"  Stages:     {' -> '.join(ordered)}")
 
     if dry_run:
@@ -276,8 +251,7 @@ def run_pipeline(
         try:
             result = _run_sequential(
                 ordered, min_score, workers=workers,
-                score_limit=score_limit,
-                validation_mode=validation_mode, rescore=rescore,
+                score_limit=score_limit, rescore=rescore,
             )
             finish_pipeline_run(run_id, "error" if result.get("errors") else "ok", result)
         except Exception as e:
@@ -312,7 +286,6 @@ def run_pipeline(
     console.print(f"    Total jobs:     {final['total']}")
     console.print(f"    With desc:      {final['with_description']}")
     console.print(f"    Scored:         {final['scored']}")
-    console.print(f"    Cover letters:  {final['with_cover_letter']}")
     console.print(f"{'=' * 70}\n")
 
     # --- NOTIFY HOOK ---
@@ -330,8 +303,7 @@ def run_pipeline(
 
 
 def _run_sequential(ordered: list[str], min_score: int, workers: int = 1,
-                    score_limit: int = 0,
-                    validation_mode: str = "normal", rescore: bool = False) -> dict:
+                    score_limit: int = 0, rescore: bool = False) -> dict:
     """Execute stages one at a time."""
     results: list[dict] = []
     errors: dict[str, str] = {}
@@ -348,13 +320,10 @@ def _run_sequential(ordered: list[str], min_score: int, workers: int = 1,
 
         try:
             kwargs: dict = {}
-            if name in ("score", "tailor", "cover"):
-                kwargs["min_score"] = min_score
-            if name in ("tailor", "cover"):
-                kwargs["validation_mode"] = validation_mode
             if name in ("discover", "enrich"):
                 kwargs["workers"] = workers
-            if name in ("score", "cover"):
+            if name == "score":
+                kwargs["min_score"] = min_score
                 kwargs["workers"] = workers
                 kwargs["stagger"] = 0.5
             if name == "score" and score_limit > 0:

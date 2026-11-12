@@ -85,7 +85,7 @@ def _setup_resume() -> None:
 
 def _setup_profile() -> dict:
     """Walk through profile questions and return a nested profile dict."""
-    console.print(Panel("[bold]Step 2: Profile[/bold]\nTell JobMatch about yourself. This powers scoring, tailoring, and optional apply helpers."))
+    console.print(Panel("[bold]Step 2: Profile[/bold]\nTell JobMatch about yourself. This powers scoring."))
 
     profile: dict = {}
 
@@ -152,9 +152,9 @@ def _setup_profile() -> dict:
         "tools": [s.strip() for s in tools.split(",") if s.strip()],
     }
 
-    # -- Resume Facts (preserved truths for tailoring) --
+    # -- Resume Facts (named in the scoring prompt) --
     console.print("\n[bold cyan]Resume Facts[/bold cyan]")
-    console.print("[dim]These are preserved exactly during resume tailoring — the AI will never change them.[/dim]")
+    console.print("[dim]Companies, projects and metrics the scorer should treat as fact.[/dim]")
     companies = Prompt.ask("Companies to always keep (comma-separated)", default="")
     projects = Prompt.ask("Projects to always keep (comma-separated)", default="")
     school = Prompt.ask("School name(s) to preserve", default="")
@@ -193,7 +193,7 @@ def build_simple_profile(
     country: str,
     target_role: str,
 ) -> dict:
-    """Minimal profile.json that scoring/tailoring can still read."""
+    """Minimal profile.json that scoring can read."""
     name = full_name.strip()
     role = target_role.strip()
     return {
@@ -553,14 +553,14 @@ def _setup_ai_simple() -> None:
 
 
 def _setup_ai_features() -> None:
-    """Ask about AI scoring/tailoring — optional LLM configuration."""
+    """Ask about AI scoring — optional LLM configuration."""
     console.print(Panel(
         "[bold]Step 5: AI Features (optional)[/bold]\n"
         "An LLM powers job scoring and fit analysis.\n"
         "Without this, you can still discover and enrich jobs."
     ))
 
-    if not Confirm.ask("Enable AI scoring and resume tailoring now?", default=False):
+    if not Confirm.ask("Enable AI scoring now?", default=False):
         console.print("[dim]Discovery-only mode. You can configure AI later with [bold]jobmatch init[/bold].[/dim]")
         return
 
@@ -600,47 +600,6 @@ def _setup_ai_features() -> None:
         ))
     console.print(f"[green]AI configuration saved to {ENV_PATH}[/green]")
 
-
-# ---------------------------------------------------------------------------
-# Manual Apply Helpers
-# --------------------------------------------------------------------------
-
-def _setup_auto_apply() -> None:
-    """Configure manual apply helpers (requires Claude Code CLI)."""
-    console.print(Panel(
-        "[bold]Step 6: Manual Apply Helpers (optional)[/bold]\n"
-        "Cover letters and apply packs only — fill and submit job applications\n"
-        "using Claude Code as the browser agent."
-    ))
-
-    if not Confirm.ask("Enable manual apply helpers?", default=False):
-        console.print("[dim]You can apply manually using the apply packs JobMatch generates.[/dim]")
-        return
-
-    # Check for Claude Code CLI
-    if shutil.which("claude"):
-        console.print("[green]Claude Code CLI detected.[/green]")
-    else:
-        console.print(
-            "[yellow]Claude Code CLI not found on PATH.[/yellow]\n"
-            "Install it from: [bold]https://claude.ai/code[/bold]\n"
-            "Browser apply helpers won't work until Claude Code is installed."
-        )
-
-    # Optional: CapSolver for CAPTCHAs
-    console.print("\n[dim]Some job sites use CAPTCHAs. CapSolver can handle them automatically.[/dim]")
-    if Confirm.ask("Configure CapSolver API key? (optional)", default=False):
-        capsolver_key = Prompt.ask("CapSolver API key")
-        # Append to existing .env or create
-        if ENV_PATH.exists():
-            existing = ENV_PATH.read_text(encoding="utf-8")
-            if "CAPSOLVER_API_KEY" not in existing:
-                write_private(ENV_PATH, existing.rstrip() + f"\nCAPSOLVER_API_KEY={capsolver_key}\n")
-        else:
-            write_private(ENV_PATH, f"# JobMatch configuration\nCAPSOLVER_API_KEY={capsolver_key}\n")
-        console.print("[green]CapSolver key saved.[/green]")
-    else:
-        console.print("[dim]Skipped. Add CAPSOLVER_API_KEY to .env later if needed.[/dim]")
 
 
 # ---------------------------------------------------------------------------
@@ -682,8 +641,6 @@ def run_wizard(*, advanced: bool = False) -> None:
         console.print()
         _setup_ai_features()
         console.print()
-        _setup_auto_apply()
-        console.print()
     else:
         profile = _setup_profile_simple()
         console.print()
@@ -717,8 +674,6 @@ def run_wizard(*, advanced: bool = False) -> None:
         unlock_hint = ""
         if tier == 1:
             unlock_hint = "\n[dim]To unlock Tier 2: configure an LLM API key (re-run [bold]jobmatch init[/bold]).[/dim]"
-        elif tier == 2:
-            unlock_hint = "\n[dim]To unlock Tier 3: install Claude Code CLI + Chrome.[/dim]"
 
         console.print(
             Panel.fit(

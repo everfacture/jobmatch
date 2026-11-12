@@ -77,12 +77,11 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
     Schema columns by stage:
       - Discovery:  url, title, salary, description, location, site, strategy, discovered_at
       - Enrichment: full_description, application_url, detail_scraped_at, detail_error
-      - Scoring:    fit_score, score_reasoning, scored_at
-      - Tailoring:  tailored_resume_path, tailored_at, tailor_attempts
-      - Cover:      cover_letter_path, cover_letter_at, cover_attempts
-      - Apply:      applied_at, apply_status, apply_error, apply_attempts,
-                   agent_id, last_attempted_at, apply_duration_ms, apply_task_id,
-                   verification_confidence
+      - Scoring:    fit_score, score_reasoning, fit_summary, gap_summary, scored_at
+      - Notify:     notified_at, notify_error
+
+    Columns from the retired tailor/cover/apply stages are left in place on
+    existing databases (SQLite keeps them harmlessly) and are no longer created.
 
     Args:
         db_path: Override the default DB_PATH.
@@ -112,8 +111,6 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
             status_reason         TEXT,
             discovered_run_id     INTEGER,
             scored_run_id         INTEGER,
-            tailored_run_id       INTEGER,
-            covered_run_id        INTEGER,
             notified_at           TEXT,
             notify_error          TEXT,
 
@@ -130,28 +127,7 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
             gap_summary           TEXT,
             keywords              TEXT,
             scored_at             TEXT,
-            score_error           TEXT,
-
-            -- Tailoring stage (resume tailor)
-            tailored_resume_path  TEXT,
-            tailored_at           TEXT,
-            tailor_attempts       INTEGER DEFAULT 0,
-
-            -- Cover letter stage
-            cover_letter_path     TEXT,
-            cover_letter_at       TEXT,
-            cover_attempts        INTEGER DEFAULT 0,
-
-            -- Application stage
-            applied_at            TEXT,
-            apply_status          TEXT,
-            apply_error           TEXT,
-            apply_attempts        INTEGER DEFAULT 0,
-            agent_id              TEXT,
-            last_attempted_at     TEXT,
-            apply_duration_ms     INTEGER,
-            apply_task_id         TEXT,
-            verification_confidence TEXT
+            score_error           TEXT
         )
     """)
     conn.execute("""
@@ -228,8 +204,6 @@ _ALL_COLUMNS: dict[str, str] = {
     "status_reason": "TEXT",
     "discovered_run_id": "INTEGER",
     "scored_run_id": "INTEGER",
-    "tailored_run_id": "INTEGER",
-    "covered_run_id": "INTEGER",
     "notified_at": "TEXT",
     "notify_error": "TEXT",
     # Enrichment
@@ -245,24 +219,6 @@ _ALL_COLUMNS: dict[str, str] = {
     "keywords": "TEXT",
     "scored_at": "TEXT",
     "score_error": "TEXT",
-    # Tailoring
-    "tailored_resume_path": "TEXT",
-    "tailored_at": "TEXT",
-    "tailor_attempts": "INTEGER DEFAULT 0",
-    # Cover letter
-    "cover_letter_path": "TEXT",
-    "cover_letter_at": "TEXT",
-    "cover_attempts": "INTEGER DEFAULT 0",
-    # Application
-    "applied_at": "TEXT",
-    "apply_status": "TEXT",
-    "apply_error": "TEXT",
-    "apply_attempts": "INTEGER DEFAULT 0",
-    "agent_id": "TEXT",
-    "last_attempted_at": "TEXT",
-    "apply_duration_ms": "INTEGER",
-    "apply_task_id": "TEXT",
-    "verification_confidence": "TEXT",
 }
 
 
@@ -390,9 +346,8 @@ def get_stats(conn: sqlite3.Connection | None = None) -> dict:
 
     Returns:
         Dictionary with keys:
-            total, by_site, pending_detail, with_description,
-            scored, unscored, tailored, untailored_eligible,
-            with_cover_letter, applied, score_distribution
+            total, inactive, by_site, pending_detail, with_description,
+            detail_errors, scored, unscored, score_distribution
     """
     if conn is None:
         conn = get_connection()
@@ -439,50 +394,6 @@ def get_stats(conn: sqlite3.Connection | None = None) -> dict:
         "GROUP BY fit_score ORDER BY fit_score DESC"
     ).fetchall()
     stats["score_distribution"] = [(row[0], row[1]) for row in dist_rows]
-
-    # Tailoring stage
-    stats["tailored"] = conn.execute(
-        "SELECT COUNT(*) FROM jobs WHERE status = 'active' AND tailored_resume_path IS NOT NULL"
-    ).fetchone()[0]
-
-    stats["untailored_eligible"] = conn.execute(
-        "SELECT COUNT(*) FROM jobs "
-        "WHERE status = 'active' AND fit_score >= 7 AND full_description IS NOT NULL "
-        "AND tailored_resume_path IS NULL"
-    ).fetchone()[0]
-
-    stats["tailor_exhausted"] = conn.execute(
-        "SELECT COUNT(*) FROM jobs "
-        "WHERE status = 'active' AND COALESCE(tailor_attempts, 0) >= 5 "
-        "AND tailored_resume_path IS NULL"
-    ).fetchone()[0]
-
-    # Cover letter stage
-    stats["with_cover_letter"] = conn.execute(
-        "SELECT COUNT(*) FROM jobs WHERE status = 'active' AND cover_letter_path IS NOT NULL"
-    ).fetchone()[0]
-
-    stats["cover_exhausted"] = conn.execute(
-        "SELECT COUNT(*) FROM jobs "
-        "WHERE status = 'active' AND COALESCE(cover_attempts, 0) >= 5 "
-        "AND (cover_letter_path IS NULL OR cover_letter_path = '')"
-    ).fetchone()[0]
-
-    # Application stage
-    stats["applied"] = conn.execute(
-        "SELECT COUNT(*) FROM jobs WHERE status = 'active' AND applied_at IS NOT NULL"
-    ).fetchone()[0]
-
-    stats["apply_errors"] = conn.execute(
-        "SELECT COUNT(*) FROM jobs WHERE apply_error IS NOT NULL"
-    ).fetchone()[0]
-
-    stats["ready_to_apply"] = conn.execute(
-        "SELECT COUNT(*) FROM jobs "
-        "WHERE status = 'active' AND cover_letter_path IS NOT NULL "
-        "AND applied_at IS NULL "
-        "AND application_url IS NOT NULL"
-    ).fetchone()[0]
 
     return stats
 
@@ -571,26 +482,9 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
 _STAGE_CONDITIONS: dict[str, str] = {
     "enrich":  "status = 'active' AND detail_scraped_at IS NULL",
     "score":   "status = 'active' AND full_description IS NOT NULL AND fit_score IS NULL",
-    "tailor":  (
-        "status = 'active' AND fit_score >= ? AND full_description IS NOT NULL "
-        "AND tailored_resume_path IS NULL AND COALESCE(tailor_attempts, 0) < 5"
-    ),
-    "cover":   (
-        "status = 'active' AND fit_score >= ? AND full_description IS NOT NULL "
-        "AND (cover_letter_path IS NULL OR cover_letter_path = '') "
-        "AND COALESCE(cover_attempts, 0) < 5"
-    ),
     # Legacy aliases for get_jobs_by_stage() callers
     "pending_detail": "status = 'active' AND detail_scraped_at IS NULL",
     "pending_score":  "status = 'active' AND full_description IS NOT NULL AND fit_score IS NULL",
-    "pending_tailor": (
-        "status = 'active' AND fit_score >= ? AND full_description IS NOT NULL "
-        "AND tailored_resume_path IS NULL AND COALESCE(tailor_attempts, 0) < 5"
-    ),
-    "pending_apply":  (
-        "status = 'active' AND (tailored_resume_path IS NOT NULL OR fit_score >= ?) "
-        "AND applied_at IS NULL AND application_url IS NOT NULL"
-    ),
 }
 
 
@@ -599,9 +493,9 @@ def count_pending(stage: str, conn: sqlite3.Connection | None = None,
     """Count pending work items for a pipeline stage.
 
     Args:
-        stage: Pipeline stage name (enrich, score, tailor, cover, pdf).
+        stage: Pipeline stage name (enrich, score).
         conn: Database connection. Uses get_connection() if None.
-        min_score: Minimum fit_score for tailor stage.
+        min_score: Minimum fit_score for stages whose condition carries a placeholder.
 
     Returns:
         Number of jobs pending this stage.
@@ -625,7 +519,7 @@ def get_jobs_by_stage(conn: sqlite3.Connection | None = None,
 
     Args:
         conn: Database connection. Uses get_connection() if None.
-        stage: One of "discovered", "enriched", "scored", "tailored", "applied".
+        stage: One of "discovered", "enriched", "scored", or a pending-work stage.
         min_score: Minimum fit_score filter (only relevant for scored+ stages).
         limit: Maximum number of rows to return.
 
@@ -640,9 +534,6 @@ def get_jobs_by_stage(conn: sqlite3.Connection | None = None,
         "discovered": "status = 'active'",
         "enriched":   "status = 'active' AND full_description IS NOT NULL",
         "scored":     "status = 'active' AND fit_score IS NOT NULL",
-        "tailored":   "status = 'active' AND tailored_resume_path IS NOT NULL",
-        "prepped":    "status = 'active' AND cover_letter_path IS NOT NULL",
-        "applied":    "status = 'active' AND applied_at IS NOT NULL",
     }
     # Merge with pending-work conditions from _STAGE_CONDITIONS
     conditions.update(_STAGE_CONDITIONS)
@@ -657,7 +548,7 @@ def get_jobs_by_stage(conn: sqlite3.Connection | None = None,
     elif "?" in where:
         params.append(7)  # default min_score
 
-    if min_score is not None and "fit_score" not in where and stage in ("scored", "tailored", "applied"):
+    if min_score is not None and "fit_score" not in where and stage == "scored":
         where += " AND fit_score >= ?"
         params.append(min_score)
 

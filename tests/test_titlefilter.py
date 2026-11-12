@@ -1,7 +1,7 @@
 """exclude_titles must apply to every discovery path, not just JobSpy.
 
 Regression: the filter lived in jobspy.py and was only applied on the JobSpy
-path, so smart-extract sources (Telegram, Dealls, HHRMA) stored rows the
+path, so smart-extract sources (Telegram, HHRMA) stored rows the
 profile had explicitly excluded -- e.g. "SITE SUPERVISOR" landed in a profile
 DB despite `supervisor` being in exclude_titles.
 """

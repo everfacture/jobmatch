@@ -37,7 +37,7 @@ def _set_profile(profile: str | None) -> None:
 
 
 # Valid pipeline stages (in execution order)
-VALID_STAGES = ("discover", "enrich", "score", "tailor", "cover", "dedup", "apply")
+VALID_STAGES = ("discover", "enrich", "score", "dedup")
 
 
 # ---------------------------------------------------------------------------
@@ -87,7 +87,7 @@ def init(
     advanced: bool = typer.Option(
         False,
         "--advanced",
-        help="Long setup: extra profile fields, apply helpers, extra providers.",
+        help="Long setup: extra profile fields and providers.",
     ),
 ) -> None:
     """Short first-time setup. Use --advanced for the long form."""
@@ -144,18 +144,7 @@ def run(
         help="Maximum jobs to score in this run. 0 means no cap.",
     ),
     rescore: bool = typer.Option(False, "--rescore", help="Force re-scoring of ALL jobs (not just unscored)."),
-    with_resume: bool = typer.Option(False, "--with-resume", help="Include tailor stage (generates full PDF resumes)."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview stages without executing."),
-    validation: str = typer.Option(
-        "normal",
-        "--validation",
-        help=(
-            "Validation strictness for tailor/cover stages when run explicitly. "
-            "strict: banned words = errors, judge must pass. "
-            "normal: banned words = warnings only (default, recommended for Gemini free tier). "
-            "lenient: banned words ignored, LLM judge skipped (fastest, fewest API calls)."
-        ),
-    ),
     notify: bool = typer.Option(False, "--notify", help="Send digest to Telegram after completion."),
     no_notify: bool = typer.Option(False, "--no-notify", help="Do not auto-send digest after scoring."),
 ) -> None:
@@ -175,19 +164,9 @@ def run(
 
     # Gate AI stages behind Tier 2. Dry run is only a preview and must work
     # before users have configured an LLM provider.
-    llm_stages = {"score", "tailor", "cover"}
-    if not dry_run and (any(s in stage_list for s in llm_stages) or "all" in stage_list):
+    if not dry_run and ("score" in stage_list or "all" in stage_list):
         from jobmatch.config import check_tier
-        check_tier(2, "AI scoring/tailoring")
-
-    # Validate the --validation flag value
-    valid_modes = ("strict", "normal", "lenient")
-    if validation not in valid_modes:
-        console.print(
-            f"[red]Invalid --validation value:[/red] '{validation}'. "
-            f"Choose from: {', '.join(valid_modes)}"
-        )
-        raise typer.Exit(code=1)
+        check_tier(2, "AI scoring")
 
     # Auto-enable notify for full pipeline runs or any run with score unless explicitly disabled.
     if no_notify:
@@ -207,9 +186,7 @@ def run(
             dry_run=dry_run,
             workers=workers,
             score_limit=score_limit,
-            validation_mode=validation,
             rescore=rescore,
-            with_resume=with_resume,
         )
     except RunLocked as exc:
         console.print(f"[yellow]Skipped:[/yellow] {exc}. It will run next time.")
@@ -262,8 +239,6 @@ def status() -> None:
     summary.add_row("Enrichment errors", str(stats["detail_errors"]))
     summary.add_row("Scored", str(stats["scored"]))
     summary.add_row("Pending scoring", str(stats["unscored"]))
-    summary.add_row("Cover letters", str(stats["with_cover_letter"]))
-    summary.add_row("Cover pending (scored, no cover yet)", str(stats["cover_exhausted"]))
     summary.add_row("Inactive jobs", str(stats.get("inactive", 0)))
 
     console.print(summary)
@@ -426,14 +401,6 @@ def doctor() -> None:
             "[dim]optional[/dim]",
             "Not required. Paste a DeepSeek/OpenAI/OpenRouter/Groq key in init.",
         ))
-
-    # CapSolver (optional — for enrichment tier 3)
-    capsolver = os.environ.get("CAPSOLVER_API_KEY")
-    if capsolver:
-        results.append(("CapSolver API key", ok_mark, "CAPTCHA solving enabled"))
-    else:
-        results.append(("CapSolver API key", "[dim]optional[/dim]",
-                        "Set CAPSOLVER_API_KEY in .env for CAPTCHA solving"))
 
     # --- Render results ---
     console.print()

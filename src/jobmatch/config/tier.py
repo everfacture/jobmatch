@@ -4,20 +4,14 @@ from rich.console import Console
 
 from jobmatch.config.profiles import load_env
 
-# ---------------------------------------------------------------------------
-# Tier system — feature gating by installed dependencies
-# ---------------------------------------------------------------------------
-
 TIER_LABELS = {
     1: "Discovery",
-    2: "AI Scoring & Tailoring",
-    3: "Manual Apply Helpers",
+    2: "AI Scoring",
 }
 
 TIER_COMMANDS: dict[int, list[str]] = {
     1: ["init", "run discover", "run enrich", "status", "dashboard"],
-    2: ["run score", "run tailor", "run cover", "run"],
-    3: ["apply", "run apply"],
+    2: ["run score", "run"],
 }
 
 
@@ -32,46 +26,26 @@ def _has_llm_config() -> bool:
 
 
 def get_tier() -> int:
-    """Detect the current tier based on available dependencies.
-
-    Tier 1 (Discovery):            Python + pip
-    Tier 2 (AI Scoring & Tailoring): + LLM provider config
-    """
+    """Tier 1 = Python only (discovery). Tier 2 = + an LLM provider key (scoring)."""
     load_env()
-
-    if not _has_llm_config():
-        return 1
-
-    return 2
+    return 2 if _has_llm_config() else 1
 
 
 def check_tier(required: int, feature: str) -> None:
-    """Raise SystemExit with a clear message if the current tier is too low.
-
-    Args:
-        required: Minimum tier needed (1 or 2).
-        feature: Human-readable description of the feature being gated.
-    """
+    """Raise SystemExit with a clear message if the current tier is too low."""
     current = get_tier()
     if current >= required:
         return
 
     _console = Console(stderr=True)
-
-    missing: list[str] = []
-    if required >= 2 and not _has_llm_config():
-        missing.append(
-            "LLM provider — run [bold]jobmatch init[/bold] and paste a "
-            "DeepSeek, OpenAI, OpenRouter, or Groq key"
-        )
-
     _console.print(
         f"\n[red]'{feature}' requires {TIER_LABELS.get(required, f'Tier {required}')} (Tier {required}).[/red]\n"
         f"Current tier: {TIER_LABELS.get(current, f'Tier {current}')} (Tier {current})."
     )
-    if missing:
-        _console.print("\n[yellow]Missing:[/yellow]")
-        for m in missing:
-            _console.print(f"  - {m}")
+    if required >= 2 and not _has_llm_config():
+        _console.print(
+            "\n[yellow]Missing:[/yellow]\n  - LLM provider — run [bold]jobmatch init[/bold] and paste a "
+            "DeepSeek, OpenAI, OpenRouter, or Groq key"
+        )
     _console.print()
     raise SystemExit(1)

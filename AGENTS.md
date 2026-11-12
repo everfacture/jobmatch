@@ -12,15 +12,7 @@ Default pipeline:
 discover -> enrich -> score -> dedup -> notify
 ```
 
-Optional/manual stages:
-
-```text
-tailor
-cover
-apply
-```
-
-Cover letters, resume tailoring, and apply packs are manual helpers. Do not make them part of the default pipeline without an explicit product decision.
+There are no other stages. Resume tailoring, cover letters and apply packs were removed in 0.4 (never used; 1,300 lines). Do not add them back without a product decision.
 
 ## Runtime data and secrets
 
@@ -38,7 +30,7 @@ Private runtime files include:
 - `preferences.yaml`
 - `searches.yaml`
 - `jobmatch.db`
-- generated digests, cover letters, apply packs, and tailored resumes
+- generated digests and the HTML dashboard
 
 Never commit real credentials, resumes, profiles, databases, generated application files, browser profiles, or local runtime directories.
 
@@ -119,7 +111,7 @@ JOBMATCH_DIR=$(mktemp -d) JOBMATCH_NOTIFY=0 jobmatch run --dry-run
 Private-file guard before commit/push:
 
 ```bash
-git ls-files | grep -Ei '(^|/)(\.env$|jobmatch\.db|resume\.(txt|pdf)$|profile\.json$|cover_letters/|tailored_resumes/|apply_logs/|src/jobmatch/config/searches\.yaml$)' || true
+git ls-files | grep -Ei '(^|/)(\.env$|jobmatch\.db|resume\.(txt|pdf)$|profile\.json$|src/jobmatch/config/searches\.yaml$)' || true
 ```
 
 Expected output: empty.
@@ -138,22 +130,6 @@ Expected output: empty.
 - Detect local Codex for doctor/setup status only. Do not treat ChatGPT/Codex OAuth as a scoring provider. Scoring stays OpenAI-compatible API keys.
 - After interactive runs, opening the local HTML dashboard is allowed. Do not open it from cron/non-TTY unless `JOBMATCH_OPEN_DASHBOARD=1`.
 - The civilian GUI is `jobmatch app` (localhost only). Double-click launchers live at the repo root. Do not turn this into a hosted SaaS.
-
-## Optional cover letters
-
-Cover letters are available but manual:
-
-```bash
-jobmatch run cover --min-score 8
-```
-
-Strict validation:
-
-```bash
-jobmatch run cover --min-score 8 --validation strict
-```
-
-Cover letters use extra LLM calls and must be reviewed by a human before sending.
 
 ## Upstream attribution
 
