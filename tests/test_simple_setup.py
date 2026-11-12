@@ -144,3 +144,53 @@ def test_apply_simple_setup_rejects_blank_key(tmp_path, monkeypatch):
         assert "API key" in str(exc)
     else:
         raise AssertionError("expected ValueError")
+
+
+def test_env_with_api_key_is_private(tmp_path, monkeypatch):
+    import os
+    import stat
+
+    from jobmatch.config.paths import write_private
+
+    target = tmp_path / ".env"
+    target.write_text("old", encoding="utf-8")
+    os.chmod(target, 0o664)
+    write_private(target, "JOBMATCH_LLM_API_KEY=x\n")
+
+    assert target.read_text(encoding="utf-8") == "JOBMATCH_LLM_API_KEY=x\n"
+    if os.name != "nt":
+        assert stat.S_IMODE(target.stat().st_mode) == 0o600
+
+
+def test_setup_location_is_accepted_by_the_location_gate(tmp_path, monkeypatch):
+    """Regression: the app wrote a location but no accept_patterns, so the gate
+    rejected every non-remote result and a new user got zero jobs."""
+    import yaml
+
+    from jobmatch import simple_setup
+    from jobmatch.config.locations import load_location_accept_reject, location_accepts_remote, location_ok
+
+    target = tmp_path / "searches.yaml"
+    monkeypatch.setattr(simple_setup, "SEARCH_CONFIG_PATH", target)
+    simple_setup.write_search_config("Bali, Indonesia", ["front office"])
+    cfg = yaml.safe_load(target.read_text(encoding="utf-8"))
+    accept, reject = load_location_accept_reject(cfg)
+    remote = location_accepts_remote(cfg)
+
+    assert location_ok("Denpasar, Bali, Indonesia", accept, reject, accept_remote=remote)
+    assert location_ok("Kuta, Bali", accept, reject, accept_remote=remote)
+    assert not location_ok("Remote", accept, reject, accept_remote=remote)
+
+
+def test_remote_setup_still_accepts_remote(tmp_path, monkeypatch):
+    import yaml
+
+    from jobmatch import simple_setup
+    from jobmatch.config.locations import load_location_accept_reject, location_accepts_remote, location_ok
+
+    target = tmp_path / "searches.yaml"
+    monkeypatch.setattr(simple_setup, "SEARCH_CONFIG_PATH", target)
+    simple_setup.write_search_config("Remote", ["buyer"])
+    cfg = yaml.safe_load(target.read_text(encoding="utf-8"))
+    accept, reject = load_location_accept_reject(cfg)
+    assert location_ok("Remote", accept, reject, accept_remote=location_accepts_remote(cfg))

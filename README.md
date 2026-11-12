@@ -33,10 +33,14 @@ You do not need to know what a terminal is.
 3. Double-click **Start JobMatch**
    - Windows: `Start JobMatch.bat`
    - Mac: `Start JobMatch.command` (if Mac blocks it: right-click → Open)
-4. First launch downloads Python and extras. That can take a few minutes. Leave the window open.
-5. Your browser opens a local screen. Paste CV, jobs, one AI key. Click find jobs.
+4. First launch downloads Python and extras (about 2 minutes on a normal connection). Leave the window open.
+5. Your browser opens a local screen. Fill in one form: your CV, the jobs you want, where, and one AI key.
+6. Click **Find jobs**. The first search takes a few minutes.
+7. Optional, on the same screen:
+   - **Send matches to your phone**: make a bot with @BotFather, paste its token, press Start in the bot. JobMatch finds your chat by itself and sends a test message.
+   - **Run every day**: pick a time. JobMatch adds the daily run to your computer's scheduler (cron, macOS launchd or Windows Task Scheduler). Only new jobs are sent each day.
 
-The black/Terminal window is the engine. Closing it quits JobMatch. Nothing is hosted on our servers.
+The black/Terminal window is the engine. Closing it quits the app screen; the daily run still happens at its time. Nothing is hosted on our servers, and your keys are saved in a file only your user can read.
 
 ---
 
@@ -110,6 +114,7 @@ If `doctor` says the LLM provider is missing, that is fine for discovery. You on
 | Find jobs without AI | `JOBMATCH_NOTIFY=0 jobmatch run discover --workers 1` |
 | Score jobs | configure AI, then `jobmatch run score --score-limit 100 --no-notify` |
 | Send Telegram digest | configure AI + Telegram, then `jobmatch run score --notify` |
+| Run it every day | `jobmatch schedule 07:00` |
 
 ### Run discovery first
 
@@ -137,7 +142,9 @@ discover -> enrich -> score -> dedup -> notify
 
 ## Make output go to Telegram
 
-Edit:
+Easiest: open `jobmatch app` and use **Send matches to your phone**. It finds the chat id for you.
+
+By hand, edit:
 
 ```text
 ~/.jobmatch/.env

@@ -130,3 +130,12 @@ DEFAULTS = {
     "viewport": "1280x900",
     "retention_days": 14,
 }
+
+
+def write_private(path: Path, text: str) -> None:
+    """Write a file only the current user can read (API keys, bot tokens)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(text)
+    os.chmod(path, 0o600)  # an existing file keeps its old mode through O_TRUNC

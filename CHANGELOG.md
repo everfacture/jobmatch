@@ -4,6 +4,14 @@ All notable public changes to JobMatch.
 
 ## Unreleased
 
+- Discovery opens a LinkedIn job page only for results that are new and pass the location and title filters. Before, every result's page was fetched first, and on a mature profile 99.7% of those were already known or filtered. Live: about 12 s per search instead of about 40 s.
+- Missing values from JobSpy are stored as NULL instead of the text "None". Enrichment had been re-checking every such row on each run; enrich on a 60k-row database went from 637 s to 3.6 s.
+- One pipeline run per profile at a time. A scheduled run, a manual run and the app's button share a lock; a second run exits and says why.
+- `jobmatch schedule HH:MM` and a **Run every day** button install one daily run (crontab, macOS LaunchAgent, Windows Task Scheduler). Installing again replaces it.
+- The app connects Telegram from a bot token alone: it reads the chat id from the bot's updates and sends a test message before saving.
+- `.env` files holding keys are written readable by the owner only.
+- The app's setup now accepts the location it was given. Before, it wrote no accept list, so the location filter dropped every non-remote result and a new user got zero jobs.
+
 - Added an HHRMA Bali discovery extractor. It reads the public sitemap and job pages. The WordPress REST API is disallowed by robots.txt, so it is not used.
 
 - Default `jobmatch init` is a short civilian path: resume, a few facts, job titles, then paste one scoring key.

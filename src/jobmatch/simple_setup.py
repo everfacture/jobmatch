@@ -18,6 +18,7 @@ from jobmatch.config import (
     SEARCH_CONFIG_PATH,
     ensure_dirs,
 )
+from jobmatch.config.paths import write_private
 from jobmatch.llm.providers import SIMPLE_PROVIDERS, render_llm_env
 from jobmatch.wizard.init import build_preferences_yaml, build_simple_profile
 
@@ -52,6 +53,12 @@ def write_search_config(location: str, roles: list[str]) -> None:
     for i, role in enumerate(clean_roles):
         lines.append(f'  - query: "{role}"')
         lines.append(f"    tier: {min(i + 1, 3)}")
+    # The location gate rejects anything that matches no accept pattern, so
+    # the place the user typed must be one. Every comma part counts:
+    # "Bali, Indonesia" accepts "Denpasar, Bali" and "Indonesia".
+    accept = [part.strip() for part in loc.split(",") if part.strip()]
+    lines += ["", "location:", f"  accept_remote: {str(remote).lower()}", "  accept_patterns:"]
+    lines += [f'    - "{part}"' for part in accept]
     SEARCH_CONFIG_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -113,15 +120,12 @@ def apply_simple_setup(
     write_search_config(location, clean_roles)
     PREFERENCES_PATH.write_text(build_preferences_yaml(profile, clean_roles), encoding="utf-8")
     preset = SIMPLE_PROVIDERS[provider_key]
-    ENV_PATH.write_text(
-        render_llm_env(
+    write_private(ENV_PATH, render_llm_env(
             base_url=preset.base_url,
             api_key=api_key.strip(),
             model=preset.model,
             notifier="console",
-        ),
-        encoding="utf-8",
-    )
+        ))
 
 
 def is_configured() -> bool:

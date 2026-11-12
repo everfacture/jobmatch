@@ -108,6 +108,25 @@ def open_app(
 
 
 @app.command()
+def schedule(
+    time: str = typer.Argument("07:00", help="Daily run time, 24-hour HH:MM."),
+) -> None:
+    """Run JobMatch every day at TIME (crontab, macOS LaunchAgent or Windows Task Scheduler)."""
+    from jobmatch.config import LOG_DIR, ensure_dirs
+    from jobmatch.config.paths import PROFILE_NAME
+    from jobmatch.schedule import install
+
+    ensure_dirs()
+    profile = None if PROFILE_NAME == "default" else PROFILE_NAME
+    try:
+        message = install(time, profile, LOG_DIR / "daily.log")
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from None
+    console.print(f"[green]{message}[/green] Log: {LOG_DIR / 'daily.log'}")
+
+
+@app.command()
 def run(
     stages: list[str] | None = typer.Argument(
         None,

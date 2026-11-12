@@ -140,6 +140,8 @@ def _home(message: str = "") -> bytes:
   <button type="submit" {"disabled" if running else ""}>Find jobs</button>
 </form>
 <p><a href="/shortlist">Open shortlist</a> · <a href="/setup">Change setup</a></p>
+{_phone_section()}
+{_schedule_section()}
 <pre class="note">{log}</pre>
 <script>
 async function ping() {{
@@ -152,6 +154,95 @@ if ("{status}" === "running") ping();
 </script>
 """
     return _page(body)
+
+
+def _env_value(key: str) -> str:
+    if not ENV_PATH.is_file():
+        return ""
+    for line in ENV_PATH.read_text(encoding="utf-8").splitlines():
+        if line.startswith(key + "="):
+            return line.split("=", 1)[1].strip()
+    return ""
+
+
+def _phone_section() -> str:
+    if _env_value("JOBMATCH_TELEGRAM_CHAT_ID"):
+        return '<h2>Phone</h2><p class="note">Telegram is connected. Matches arrive there.</p>'
+    return """
+<h2>Send matches to your phone</h2>
+<ol class="note">
+  <li>In Telegram, open <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a>,
+      send <code>/newbot</code>, pick any name. It replies with a token.</li>
+  <li>Paste the token here and click Connect.</li>
+</ol>
+<form method="post" action="/telegram">
+  <label>Bot token <input name="token" type="password" autocomplete="off" required></label>
+  <button type="submit">Connect</button>
+</form>"""
+
+
+def _schedule_section() -> str:
+    saved = (APP_DIR / "schedule.txt").read_text(encoding="utf-8").strip() if (APP_DIR / "schedule.txt").is_file() else ""
+    note = f'<p class="note">{_esc(saved)}</p>' if saved else ""
+    return f"""
+<h2>Run every day</h2>
+{note}
+<form method="post" action="/schedule">
+  <label>Time (24-hour) <input name="time" value="07:00" pattern="[0-2][0-9]:[0-5][0-9]" required></label>
+  <button type="submit">Save daily run</button>
+</form>
+<p class="note">Your computer has to be on at that time. Each day only new jobs are sent.</p>"""
+
+
+_PENDING_TOKEN = ""
+
+
+def _telegram_step(form: dict[str, str]) -> bytes:
+    from jobmatch.config.paths import write_private
+    from jobmatch.telegram_setup import (
+        TelegramSetupError,
+        bot_name,
+        env_lines,
+        find_chats,
+        merge_env,
+        send_test,
+    )
+
+    global _PENDING_TOKEN
+    token = form.get("token", "").strip() or _PENDING_TOKEN
+    chat_id = ""
+    try:
+        name = bot_name(token)
+        if not chat_id:
+            chats = find_chats(token)
+            if not chats:
+                _PENDING_TOKEN = token  # kept in memory, never sent back to the page
+                return _page(f"""<h1>One more step</h1>
+<p>Open Telegram, find <strong>{_esc(name)}</strong>, press Start (or send it any message), then click Check.</p>
+<form method="post" action="/telegram">
+  <button type="submit">Check</button>
+</form><p><a href="/">Back</a></p>""")
+            chat_id = str(chats[0]["id"])
+        send_test(token, chat_id)
+    except TelegramSetupError as exc:
+        return _home(f"Telegram: {exc}")
+    existing = ENV_PATH.read_text(encoding="utf-8") if ENV_PATH.is_file() else ""
+    write_private(ENV_PATH, merge_env(existing, env_lines(token, chat_id)))
+    _PENDING_TOKEN = ""
+    load_env()
+    return _home(f"Connected. {name} sent you a test message.")
+
+
+def _schedule_step(form: dict[str, str]) -> bytes:
+    from jobmatch.schedule import install
+
+    hhmm = form.get("time", "").strip()
+    try:
+        message = install(hhmm, os.environ.get("JOBMATCH_PROFILE") or None, RUN_LOG_PATH)
+    except (ValueError, OSError, subprocess.CalledProcessError) as exc:
+        return _home(f"Could not save the daily run: {exc}")
+    (APP_DIR / "schedule.txt").write_text(message, encoding="utf-8")
+    return _home(message)
 
 
 def _start_run() -> None:
@@ -261,6 +352,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(_setup_form(str(exc)), status=400)
                 return
             self._send(_home("Saved. Everything is on this computer."))
+            return
+        if path == "/telegram":
+            self._send(_telegram_step(self._form()))
+            return
+        if path == "/schedule":
+            self._send(_schedule_step(self._form()))
             return
         if path == "/run":
             if not is_configured():
