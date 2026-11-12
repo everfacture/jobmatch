@@ -2,7 +2,7 @@
 
 All notable public changes to JobMatch.
 
-## Unreleased
+## 0.4.0 — 2026-11-12
 
 - Removed the Workday employer crawl and the split-discovery (`JOBMATCH_DISCOVERY_PARTS`) mode. One sequential run per profile replaces them; the run lock already prevents overlap.
 - `jobmatch prune --dry-run` no longer expires old active rows as a side effect; a dry run now changes nothing. A real prune now VACUUMs, so the file shrinks (372 MB -> 134 MB on a 60k-row database).
