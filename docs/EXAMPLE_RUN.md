@@ -1,68 +1,48 @@
 # Example Run
 
-This is a real smoke-test shape from the maintainer setup. Your numbers will vary by search config, location, provider, network, and job boards.
+Real numbers from a maintainer setup on 2026-11-12. Yours will vary with search config, job boards, provider and network.
 
-## Discovery chunk
-
-Full discovery can be slow because it searches a matrix of queries and locations. For scheduled runs, split discovery into chunks.
-
-Example command:
+## One full run
 
 ```bash
-JOBMATCH_NOTIFY=0 \
-APIFY_ENABLED=false \
-DEALLS_ENABLED=false \
-JOBMATCH_DISCOVERY_PARTS=8 \
-JOBMATCH_DISCOVERY_PART=1 \
-jobmatch run discover --workers 1
+jobmatch run --no-notify
 ```
 
-Observed result:
+A mature profile (53 query x location searches, one region, two custom extractors):
+
+| Stage | Time | Result |
+|---|---:|---|
+| discover | 732 s | 53 LinkedIn/Indeed searches, 4 new; custom extractors 70 s, 4 new |
+| enrich | 0.2 s | nothing pending (new rows were fetched during discovery) |
+| score | 5 s | 5 jobs, 5 LLM calls |
+| dedup | 0.1 s | 0 duplicates |
+| **total** | **738 s** | 0 errors |
+
+A fresh profile is slower on discovery because every result is new and its page is fetched: about 60 s per search instead of 10.
+
+## Scoring cost
+
+500 jobs scored with `deepseek-v4-flash` through the OpenAI-compatible path:
 
 | Metric | Result |
 |---|---:|
-| Chunk | 1 / 8 |
-| Search combinations | 11 / 84 |
-| Source hit in this chunk | LinkedIn via JobSpy |
-| Elapsed time | 326s |
-| New jobs | 23 |
-| Duplicates | 19 |
+| Elapsed | 254 s (5 workers) |
+| LLM calls | 500 |
+| Average prompt | ~2,700 tokens |
+| Estimated cost | about $0.30 |
 | Errors | 0 |
 
-Configured live discovery surface for this run:
+Most jobs score below the threshold and are marked `low_score`. That is the tool filtering, not failing.
 
-| Source family | Status |
-|---|---|
-| JobSpy / LinkedIn | enabled |
-| Workday employers | DBS Bank, Visa; final chunk only |
-| Smart/custom extractors | final chunk only |
-| Apify-backed sources | disabled for this run |
-| Dealls | disabled for this run |
+Deterministic rules (reject roles, hard caps, target-role matches) settle roughly 10% of jobs before any LLM call.
 
-## Scoring sample
-
-Bounded scoring sample:
+## Retention
 
 ```bash
-# Internal sample used run_scoring(limit=10) to avoid scoring the whole backlog.
+jobmatch prune --older-than 30 --yes
 ```
 
-Observed result:
-
-| Metric | Result |
-|---|---:|
-| Jobs scored | 10 |
-| Elapsed time | 43s |
-| Model | `deepseek-v4-flash` |
-| LLM calls | 10 |
-| Prompt tokens | 39,839 |
-| Completion tokens | 2,958 |
-| Total tokens | 42,797 |
-| Estimated cost | `$0.0064` |
-| Approx cost/job | `$0.00064` |
-| Errors | 0 |
-
-All 10 sampled jobs scored below the active threshold and were marked `low_score`. That is a good outcome: the model filtered weak matches instead of flattering everything.
+On a 60,000-row database: 41,724 inactive rows deleted, file 372 MB -> 134 MB, 3 s.
 
 ## Telegram digest shape
 
@@ -83,13 +63,10 @@ Example Company · Remote
 The role owns sourcing/procurement execution, vendor management, and performance tracking across the claims/vendor function.
 ```
 
-A real run sends one compact card per high-fit job and may send an urgent summary when score-9 jobs are present.
+One compact card per high-fit job. Jobs already sent are not re-sent, even when a board reposts them under a new URL.
 
 ## Notes
 
-- Discovery speed depends mostly on job boards, query count, and location count.
-- Scoring cost depends on provider pricing and job-description length.
-- The example model was accessed through the OpenAI-compatible provider path.
 - `run --dry-run` costs nothing and creates no DB.
 - `run discover` hits external job sites.
 - `run score` sends job/profile/resume text to the configured AI provider.

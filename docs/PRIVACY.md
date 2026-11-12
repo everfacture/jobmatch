@@ -10,13 +10,13 @@ JobMatch is designed as a local-first tool.
 - `searches.yaml`
 - `resume.txt`
 - `jobmatch.db`
-- generated outputs such as cover letters and digests
+- generated outputs such as digests and the HTML dashboard
 
 The repo ships examples only. Real runtime data should never be committed.
 
 ## What may leave the machine
 
-When AI scoring, cover-letter generation, or other LLM-backed stages run, the relevant job/profile/resume text may be sent to the configured AI provider.
+When AI scoring or LLM-assisted enrichment runs, the relevant job/profile/resume text may be sent to the configured AI provider.
 
 That means:
 

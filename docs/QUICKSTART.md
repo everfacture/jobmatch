@@ -259,15 +259,6 @@ DB Final State:
 
 If you get `0 jobs`, the app still worked; your search was probably too narrow or the job board blocked/returned nothing. Edit `~/.jobmatch/searches.yaml` and try broader roles or locations.
 
-For big search configs, chunk it:
-
-```bash
-JOBMATCH_NOTIFY=0 \
-JOBMATCH_DISCOVERY_PARTS=8 \
-JOBMATCH_DISCOVERY_PART=1 \
-jobmatch run discover --workers 1
-```
-
 Then check:
 
 ```bash
@@ -333,23 +324,15 @@ Telegram sends compact cards for high-fit jobs.
 
 ---
 
-## 10. Optional cover letters
+## 10. Keep the database small
 
-Cover letters are off by default.
-
-If you want drafts:
+Inactive jobs (low score, duplicates, expired) pile up. Once a week:
 
 ```bash
-jobmatch run cover --min-score 8
+jobmatch prune --older-than 30 --yes
 ```
 
-Strict mode:
-
-```bash
-jobmatch run cover --min-score 8 --validation strict
-```
-
-Review every draft before sending. The tool is not your lawyer, recruiter, or conscience.
+`--dry-run` (the default) only counts. The real prune also compacts the file.
 
 ---
 
@@ -367,13 +350,7 @@ JOBMATCH_LLM_MODEL=
 
 ### Discovery is slow
 
-Use chunking:
-
-```bash
-JOBMATCH_DISCOVERY_PARTS=8 JOBMATCH_DISCOVERY_PART=1 jobmatch run discover --workers 1
-```
-
-Run parts 1 to 8 over time.
+Fewer queries and locations in `~/.jobmatch/searches.yaml` is the only real lever. Each query x location is one job-board search (about 10-60 s). Only one run per profile can be active at a time; a second one exits with "Skipped".
 
 ### Telegram does not send
 

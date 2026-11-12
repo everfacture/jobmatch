@@ -39,7 +39,7 @@ PYTHONPATH=src python -m pytest -q
 ## Architecture rules
 
 - Default pipeline order: `discover -> enrich -> score -> dedup -> notify`.
-- Cover letters, apply packs, and resume tailoring are explicit/manual stages.
+- There are no other stages. Do not add generation stages (cover letters, resume tailoring, auto-apply) without a product decision.
 - Runtime config belongs in `~/.jobmatch/`, not in the repo.
 - Repo docs must not contain real credentials or absolute private machine paths.
 - Prefer concrete tests before structural database splits.

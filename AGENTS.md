@@ -12,7 +12,7 @@ Default pipeline:
 discover -> enrich -> score -> dedup -> notify
 ```
 
-There are no other stages. Resume tailoring, cover letters and apply packs were removed in 0.4 (never used; 1,300 lines). Do not add them back without a product decision.
+There are no other stages. Resume tailoring, cover letters and apply packs were removed in 0.4.0. Do not add them back without a product decision.
 
 ## Runtime data and secrets
 

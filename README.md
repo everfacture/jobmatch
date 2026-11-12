@@ -309,6 +309,7 @@ See [`docs/PROVIDERS.md`](docs/PROVIDERS.md) for more detail.
 | `jobmatch run` | run discover/enrich/score/dedup/notify |
 | `jobmatch run score --score-limit 100 --no-notify` | cap paid scoring calls for a batch |
 | `jobmatch status` | show database counts |
+| `jobmatch prune --older-than 30 --yes` | delete inactive jobs older than 30 days and compact the file |
 
 ---
 

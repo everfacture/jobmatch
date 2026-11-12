@@ -126,7 +126,7 @@ def strip_preamble(raw: str, marker: str = "dear") -> str:
     """Remove LLM preamble before a known marker string.
 
     Models often output meta-commentary before the actual content
-    (e.g. "Here is the cover letter:"). This strips everything before
+    (e.g. "Here is the result:"). This strips everything before
     the first occurrence of the marker (case-insensitive).
 
     Args:

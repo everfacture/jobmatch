@@ -13,7 +13,7 @@ Never commit or paste these into issues, pull requests, screenshots, or logs:
 - `preferences.yaml` if it contains private career or personal details
 - `searches.yaml` if it exposes private target markets
 - `jobmatch.db`
-- generated cover letters, apply packs, tailored resumes, or application notes
+- generated digests, dashboards, or application notes
 
 Use the example files in the repo as templates only.
 
