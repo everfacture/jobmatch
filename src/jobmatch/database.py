@@ -681,10 +681,21 @@ def get_jobs_by_stage(conn: sqlite3.Connection | None = None,
 
 def start_pipeline_run(stages: list[str], min_score: int, workers: int,
                        conn: sqlite3.Connection | None = None) -> int:
-    """Create a durable record for one pipeline execution."""
+    """Create a durable record for one pipeline execution.
+
+    The run lock guarantees one run per profile, so any row still 'running'
+    when a new run starts belongs to a process that was killed (cron timeout,
+    SIGTERM). Close it as 'aborted' so the table does not accumulate runs
+    that look alive forever.
+    """
     if conn is None:
         conn = get_connection()
     now = datetime.now(UTC).isoformat()
+    conn.execute(
+        "UPDATE pipeline_runs SET status = 'aborted', finished_at = ?, "
+        "error = 'process exited without finishing' WHERE status = 'running'",
+        (now,),
+    )
     cur = conn.execute(
         """
         INSERT INTO pipeline_runs (profile_name, started_at, stages, min_score, workers, status)

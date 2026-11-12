@@ -4,6 +4,8 @@ All notable public changes to JobMatch.
 
 ## Unreleased
 
+- `WORKDAY_ENABLED=false` in `.env` skips the Workday employer crawl. Profiles that search one region have no use for a global corporate crawl that costs minutes per run.
+- A pipeline run left in `running` by a killed process is closed as `aborted` when the next run starts, so the run table no longer accumulates runs that look alive.
 - Discovery opens a LinkedIn job page only for results that are new and pass the location and title filters. Before, every result's page was fetched first, and on a mature profile 99.7% of those were already known or filtered. Live: about 12 s per search instead of about 40 s.
 - Missing values from JobSpy are stored as NULL instead of the text "None". Enrichment had been re-checking every such row on each run; enrich on a 60k-row database went from 637 s to 3.6 s.
 - One pipeline run per profile at a time. A scheduled run, a manual run and the app's button share a lock; a second run exits and says why.

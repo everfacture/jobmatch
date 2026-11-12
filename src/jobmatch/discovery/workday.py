@@ -8,6 +8,7 @@ Employer registry is loaded from config/employers.yaml.
 
 import json
 import logging
+import os
 import re
 import sqlite3
 import urllib.request
@@ -207,6 +208,9 @@ def store_results(conn: sqlite3.Connection, jobs: list[dict], employer_name: str
 
 def run_workday_discovery(employers: dict | None = None, workers: int = 1) -> dict:
     """Main entry point for Workday-based corporate job discovery."""
+    if os.environ.get("WORKDAY_ENABLED", "true").strip().lower() in {"0", "false", "no", "off", "disabled"}:
+        log.info("Workday disabled: WORKDAY_ENABLED=false")
+        return {"found": 0, "new": 0, "existing": 0, "queries": 0}
     if employers is None:
         employers = load_employers()
     if not employers:
