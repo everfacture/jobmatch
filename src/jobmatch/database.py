@@ -665,4 +665,5 @@ def prune_jobs(days: int = 14, statuses: tuple[str, ...] = ("low_score", "duplic
     if not dry_run and count:
         conn.execute(f"DELETE {sql}", params)
         conn.commit()
+        conn.execute("VACUUM")  # give the space back; a delete alone leaves the file the same size
     return int(count)

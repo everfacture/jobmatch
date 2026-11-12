@@ -5,7 +5,7 @@ All notable public changes to JobMatch.
 ## Unreleased
 
 - Removed the Workday employer crawl and the split-discovery (`JOBMATCH_DISCOVERY_PARTS`) mode. One sequential run per profile replaces them; the run lock already prevents overlap.
-- `jobmatch prune --dry-run` no longer expires old active rows as a side effect; a dry run now changes nothing.
+- `jobmatch prune --dry-run` no longer expires old active rows as a side effect; a dry run now changes nothing. A real prune now VACUUMs, so the file shrinks (372 MB -> 134 MB on a 60k-row database).
 - Scoring writes each result to the database as it lands instead of buffering every result to the end of the stage. A run killed mid-stage (cron timeout, SIGTERM) now keeps the scores it already paid for; before, a 58-minute run that was killed at the write step lost 1,361 scored jobs.
 - Removed the resume-tailoring, cover-letter and apply-pack stages (`run tailor|cover|apply`, `--with-resume`, `--validation`), their validator, 12 unused `jobs` columns, and the Chrome/CapSolver plumbing they needed. They had never produced a row in a live database. Existing databases keep the old columns; new ones are not created.
 - Removed the Dealls extractor (its job pages 404 on enrichment: 319 of 374 rows ever) and the Apify-backed Glints/Bayt/Naukri Gulf/GulfTalent/JobStreet stubs. Live custom extractors are Telegram Bali and HHRMA Bali.
