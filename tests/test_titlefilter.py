@@ -2,7 +2,7 @@
 
 Regression: the filter lived in jobspy.py and was only applied on the JobSpy
 path, so smart-extract sources (Telegram, Dealls, HHRMA) stored rows the
-profile had explicitly excluded -- e.g. "SITE SUPERVISOR" landed in the named-profile
+profile had explicitly excluded -- e.g. "SITE SUPERVISOR" landed in a profile
 DB despite `supervisor` being in exclude_titles.
 """
 

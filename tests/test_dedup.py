@@ -47,7 +47,7 @@ def _status(conn, url):
 def test_various_positions_with_different_bodies_both_stay():
     conn = _db()
     _add(conn, "https://t.me/carikerja_bali/1", "Various Positions", "",
-         "Email: hrd@yolla.com", 9, "2026-09-29T00:00:00")
+         "Email: hr@example.com", 9, "2026-09-29T00:00:00")
     _add(conn, "https://t.me/carikerja_bali/2", "Various Positions", "",
          "Email: recruitment@thenest.com", 9, "2026-10-06T00:00:00")
     result = run_dedup(conn)
