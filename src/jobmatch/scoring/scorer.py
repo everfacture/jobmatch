@@ -208,6 +208,36 @@ def score_job(
         return {"score": None, "fit": "", "gap": "", "keywords": "", "error": str(e)}
 
 
+def _write_result(conn, r: dict, run_id: int | None) -> None:
+    """Persist one scoring result (score or error) for its job URL."""
+    now = datetime.now(UTC).isoformat()
+    if r["score"] is None:
+        conn.execute(
+            "UPDATE jobs SET score_error = ?, scored_at = ?, scored_run_id = ? WHERE url = ?",
+            (r.get("error", "Unknown error"), now, run_id, r["url"]),
+        )
+        return
+    reasoning_parts = []
+    if r.get("scoring_method"):
+        reasoning_parts.append(f"METHOD: {r['scoring_method']}")
+    if r.get("fit"):
+        reasoning_parts.append(f"FIT: {r['fit']}")
+    if r.get("gap"):
+        reasoning_parts.append(f"GAP: {r['gap']}")
+    if r.get("keywords"):
+        reasoning_parts.append(f"KEYWORDS: {r['keywords']}")
+    conn.execute(
+        """
+        UPDATE jobs
+        SET fit_score = ?, score_reasoning = ?, fit_summary = ?, gap_summary = ?, keywords = ?,
+            scored_at = ?, scored_run_id = ?
+        WHERE url = ?
+        """,
+        (r["score"], "\n".join(reasoning_parts), r.get("fit", ""), r.get("gap", ""), r.get("keywords", ""),
+         now, run_id, r["url"]),
+    )
+
+
 def run_scoring(limit: int = 0, rescore: bool = False, min_score: int = 7,
                 workers: int = 5, stagger: float = 0.5) -> dict:
     """Score unscored jobs that have full descriptions.
@@ -262,12 +292,23 @@ def run_scoring(limit: int = 0, rescore: bool = False, min_score: int = 7,
     log.info("Scoring %d jobs with %d workers (stagger=%.1fs)...", n, effective_workers, stagger)
     t0 = time.time()
 
+    run_id = current_run_id()
+
     def _score_slice(slice_jobs, worker_id):
-        """Score a slice of jobs. Returns list of result dicts."""
+        """Score a slice of jobs, writing each result as soon as it lands.
+
+        Each worker writes on its own thread-local connection and commits per
+        job, so a kill mid-run (cron timeout, SIGTERM) keeps every score that
+        was already paid for. Buffering results to one end-of-run write lost
+        1,361 scored jobs when a wrapper timeout fired at 58 minutes.
+        """
+        wconn = get_connection()
         results = []
         for job in slice_jobs:
             result = score_job(resume_text, job, profile=profile, preferences=preferences)
             result["url"] = job["url"]
+            _write_result(wconn, result, run_id)
+            wconn.commit()
             results.append(result)
         return results
 
@@ -300,52 +341,6 @@ def run_scoring(limit: int = 0, rescore: bool = False, min_score: int = 7,
             except Exception as e:
                 log.error("Worker %d failed: %s", worker_id, e)
                 total_errors += len(slices[worker_id])
-
-    # Sort results by original job order for consistent logging
-    job_order = {r["url"]: i for i, r in enumerate(all_results)}
-    all_results.sort(key=lambda r: job_order.get(r["url"], 999999))
-
-    # Write scores to DB in batches of 50
-    now = datetime.now(UTC).isoformat()
-    run_id = current_run_id()
-    batch_size = 50
-    for idx, r in enumerate(all_results):
-        if r["score"] is None:
-            conn.execute(
-                "UPDATE jobs SET score_error = ?, scored_at = ?, scored_run_id = ? WHERE url = ?",
-                (r.get("error", "Unknown error"), now, run_id, r["url"]),
-            )
-        else:
-            # Store fit/gap as structured reasoning
-            reasoning_parts = []
-            if r.get("scoring_method"):
-                reasoning_parts.append(f"METHOD: {r['scoring_method']}")
-            if r.get("fit"):
-                reasoning_parts.append(f"FIT: {r['fit']}")
-            if r.get("gap"):
-                reasoning_parts.append(f"GAP: {r['gap']}")
-            if r.get("keywords"):
-                reasoning_parts.append(f"KEYWORDS: {r['keywords']}")
-            reasoning_text = "\n".join(reasoning_parts)
-
-            conn.execute(
-                """
-                UPDATE jobs
-                SET fit_score = ?, score_reasoning = ?, fit_summary = ?, gap_summary = ?, keywords = ?,
-                    scored_at = ?, scored_run_id = ?
-                WHERE url = ?
-                """,
-                (r["score"], reasoning_text, r.get("fit", ""), r.get("gap", ""), r.get("keywords", ""),
-                 now, run_id, r["url"]),
-            )
-
-        # Commit every batch_size to avoid losing progress on crash
-        if (idx + 1) % batch_size == 0:
-            conn.commit()
-            log.info("Checkpoint: committed %d/%d scores", idx + 1, len(all_results))
-
-    # Final commit for remaining
-    conn.commit()
 
     elapsed = time.time() - t0
     log.info("Done: %d scored in %.1fs (%.1f jobs/sec)", len(all_results), elapsed, len(all_results) / elapsed if elapsed > 0 else 0)
