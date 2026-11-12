@@ -14,10 +14,10 @@ import logging
 import os
 import re
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from jobmatch.config import RESUME_PATH, TAILORED_DIR, load_profile
-from jobmatch.database import get_connection, get_jobs_by_stage, current_run_id
+from jobmatch.database import current_run_id, get_connection, get_jobs_by_stage
 from jobmatch.llm.client import get_client
 from jobmatch.llm.parsing import extract_json
 from jobmatch.scoring.validator import (
@@ -510,7 +510,7 @@ def run_tailoring(min_score: int = 7, limit: int = 20,
         )
 
         # Persist after each job so aborts/restarts keep completed work.
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         if result["status"] in _success_statuses:
             conn.execute(
                 "UPDATE jobs SET tailored_resume_path=?, tailored_at=?, tailored_run_id=?, "

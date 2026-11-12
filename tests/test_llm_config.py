@@ -2,7 +2,6 @@ import pytest
 
 from jobmatch.llm.client import _build_fallback_chain, _maybe_prepend_no_think, configured_provider_labels
 
-
 _ENV_KEYS = [
     "JOBMATCH_LLM_BASE_URL",
     "JOBMATCH_LLM_API_KEY",
@@ -117,3 +116,47 @@ def test_canonical_qwen_model_gets_no_think(monkeypatch):
     messages = [{"role": "user", "content": "score this job"}]
 
     assert _maybe_prepend_no_think(messages)[0]["content"].startswith("/no_think\n")
+
+
+def test_claude_oauth_without_login_falls_through_to_api_key(monkeypatch, tmp_path):
+    """A user with no Claude Code login must land on their own key, not crash."""
+    import httpx
+
+    from jobmatch.llm import client as client_mod
+
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("HOME", str(tmp_path))  # no ~/.claude/.credentials.json
+    monkeypatch.setenv("LLM_URL", "https://api.anthropic.com")
+    monkeypatch.setenv("LLM_MODEL", "claude-haiku-5-5")
+    monkeypatch.setenv("LLM_AUTH", "claude-oauth")
+    monkeypatch.setenv("FALLBACK_LLM_URL", "https://fallback.example/v1")
+    monkeypatch.setenv("FALLBACK_LLM_API_KEY", "user-key")
+    monkeypatch.setenv("FALLBACK_LLM_MODEL", "cheap-model")
+    monkeypatch.setattr(client_mod.LLMClient, "_record_usage", lambda *a, **k: None)
+
+    seen = []
+
+    def fake_post(self, url, json=None, headers=None, **kwargs):
+        seen.append((url, headers.get("Authorization")))
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "ok"}}]},
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+
+    assert client_mod.LLMClient().ask("hi") == "ok"
+    assert seen == [("https://fallback.example/v1/chat/completions", "Bearer user-key")]
+
+
+def test_claude_oauth_alone_without_login_raises_clear_error(monkeypatch, tmp_path):
+    from jobmatch.llm import client as client_mod
+
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LLM_URL", "https://api.anthropic.com")
+    monkeypatch.setenv("LLM_AUTH", "claude-oauth")
+
+    with pytest.raises(RuntimeError, match="Claude Code login"):
+        client_mod.LLMClient().ask("hi")

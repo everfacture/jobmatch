@@ -2,7 +2,7 @@
 
 import json
 
-from jobmatch.config.paths import PROFILE_PATH, SEARCH_CONFIG_PATH, CONFIG_DIR, ENV_PATH
+from jobmatch.config.paths import CONFIG_DIR, ENV_PATH, PROFILE_PATH, SEARCH_CONFIG_PATH
 
 
 def load_profile() -> dict:

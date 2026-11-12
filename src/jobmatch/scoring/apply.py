@@ -14,11 +14,11 @@ or fragile form automation.
 import logging
 import re
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from jobmatch.config import load_profile
-from jobmatch.config.paths import RESUME_PATH, APP_DIR
+from jobmatch.config.paths import APP_DIR, RESUME_PATH
 from jobmatch.database import get_connection
 
 log = logging.getLogger(__name__)
@@ -167,7 +167,7 @@ def run_apply_stage(min_score: int = 7, limit: int = 50) -> dict:
     t0 = time.time()
     generated = 0
     error_count = 0
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     for job in jobs:
         try:

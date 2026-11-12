@@ -23,13 +23,13 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from jobmatch.config import load_env, ensure_dirs
+from jobmatch.config import ensure_dirs, load_env
 from jobmatch.config.paths import ENV_PATH
 from jobmatch.database import (
-    init_db,
-    get_stats,
-    start_pipeline_run,
     finish_pipeline_run,
+    get_stats,
+    init_db,
+    start_pipeline_run,
 )
 
 # Load .env for LLM credentials (JOBMATCH_LLM_*, legacy LLM_*, etc.).

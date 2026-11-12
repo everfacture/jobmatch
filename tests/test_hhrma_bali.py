@@ -237,7 +237,6 @@ def test_max_pages_caps_post_fetches(monkeypatch):
 
 
 def test_zero_parsed_pages_warns(monkeypatch, caplog):
-    import jobmatch.discovery.smartextract as st
 
     calls = []
     _install(monkeypatch, calls)

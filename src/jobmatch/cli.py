@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Optional
 
 import typer
 from rich.console import Console
@@ -47,7 +46,7 @@ VALID_STAGES = ("discover", "enrich", "score", "tailor", "cover", "dedup", "appl
 
 def _bootstrap() -> None:
     """Common setup: load env, create dirs, init DB."""
-    from jobmatch.config import load_env, ensure_dirs
+    from jobmatch.config import ensure_dirs, load_env
     from jobmatch.database import init_db
 
     load_env()
@@ -73,7 +72,7 @@ def main(
         callback=_version_callback,
         is_eager=True,
     ),
-    profile: Optional[str] = typer.Option(
+    profile: str | None = typer.Option(
         None,
         "--profile",
         help="Candidate profile name. Named profiles use ~/.jobmatch/profiles/<name>.",
@@ -110,7 +109,7 @@ def open_app(
 
 @app.command()
 def run(
-    stages: Optional[list[str]] = typer.Argument(
+    stages: list[str] | None = typer.Argument(
         None,
         help=(
             "Pipeline stages to run. "
@@ -192,7 +191,7 @@ def run(
     )
 
     if not dry_run:
-        from jobmatch.view import should_open_dashboard, open_dashboard
+        from jobmatch.view import open_dashboard, should_open_dashboard
 
         if should_open_dashboard():
             try:
@@ -308,8 +307,13 @@ def dashboard() -> None:
 def doctor() -> None:
     """Check your setup and diagnose missing requirements."""
     from jobmatch.config import (
-        load_env, PROFILE_PATH, RESUME_PATH, RESUME_PDF_PATH,
-        SEARCH_CONFIG_PATH, PREFERENCES_PATH, load_preferences,
+        PREFERENCES_PATH,
+        PROFILE_PATH,
+        RESUME_PATH,
+        RESUME_PDF_PATH,
+        SEARCH_CONFIG_PATH,
+        load_env,
+        load_preferences,
         scoring_preferences,
     )
 
@@ -418,7 +422,7 @@ def doctor() -> None:
     console.print()
 
     # Tier summary
-    from jobmatch.config import get_tier, TIER_LABELS
+    from jobmatch.config import TIER_LABELS, get_tier
     tier = get_tier()
     console.print(f"[bold]Current tier: Tier {tier} — {TIER_LABELS[tier]}[/bold]")
 

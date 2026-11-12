@@ -14,10 +14,10 @@ import json
 import shutil
 from pathlib import Path
 
+import yaml
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
-import yaml
 
 from jobmatch.config import (
     APP_DIR,
@@ -706,7 +706,7 @@ def run_wizard(*, advanced: bool = False) -> None:
         _setup_ai_simple()
         console.print()
 
-    from jobmatch.config import get_tier, TIER_LABELS, TIER_COMMANDS
+    from jobmatch.config import TIER_COMMANDS, TIER_LABELS, get_tier
 
     tier = get_tier()
 

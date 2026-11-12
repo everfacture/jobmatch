@@ -1,6 +1,5 @@
 from jobmatch.scoring.scorer import build_score_prompt, score_job
 
-
 PROFILE = {
     "personal": {"full_name": "Candidate Example", "preferred_name": "Candidate"},
     "experience": {

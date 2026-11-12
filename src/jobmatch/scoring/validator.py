@@ -6,7 +6,6 @@ has its own rules (field-level checks, fabrication watchlist).
 
 import re
 
-
 BANNED_WORDS: list[str] = [
     "passionate", "dedicated", "committed to",
     "utilizing", "utilize", "harnessing",

@@ -14,16 +14,16 @@ import re
 import sqlite3
 import sys
 import time
-from datetime import date, datetime, timedelta, timezone
-from urllib.parse import urlparse, parse_qs
+from datetime import UTC, date, datetime, timedelta
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 import yaml
 
 from jobmatch import config
-from jobmatch.config import CONFIG_DIR, location_ok, load_location_accept_reject
+from jobmatch.config import CONFIG_DIR, load_location_accept_reject, location_ok
 from jobmatch.config.locations import location_accepts_remote
-from jobmatch.database import init_db, current_run_id
+from jobmatch.database import current_run_id, init_db
 from jobmatch.discovery.titlefilter import title_excluded
 
 log = logging.getLogger(__name__)
@@ -483,7 +483,7 @@ def _hhrma_max_pages() -> int:
 
 
 def _hhrma_today() -> date:
-    return datetime.now(timezone.utc).date()
+    return datetime.now(UTC).date()
 
 
 def _hhrma_get(url: str):
@@ -927,7 +927,7 @@ def _store_jobs_filtered(
     exclude_titles: list[str] | None = None,
 ) -> tuple[int, int]:
     """Store jobs with location filtering. Returns (new, existing)."""
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     new = 0
     existing = 0
     filtered = 0

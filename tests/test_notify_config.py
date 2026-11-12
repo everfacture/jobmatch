@@ -46,8 +46,8 @@ def test_fetch_pending_jobs_skips_previous_day_role_duplicate(tmp_path, monkeypa
     monkeypatch.setenv("JOBMATCH_DIR", str(tmp_path))
     monkeypatch.setenv("JOBMATCH_NOTIFIER", "console")
 
-    import jobmatch.config.paths as paths
     import jobmatch.config as config
+    import jobmatch.config.paths as paths
     import jobmatch.database as database
     import jobmatch.notify as notify
 
@@ -113,8 +113,8 @@ def test_fetch_pending_jobs_treats_string_none_application_url_as_missing(tmp_pa
     monkeypatch.setenv("JOBMATCH_DIR", str(tmp_path))
     monkeypatch.setenv("JOBMATCH_NOTIFIER", "console")
 
-    import jobmatch.config.paths as paths
     import jobmatch.config as config
+    import jobmatch.config.paths as paths
     import jobmatch.database as database
     import jobmatch.notify as notify
 
@@ -156,8 +156,8 @@ def test_console_notifier_records_history_for_sent_job(tmp_path, monkeypatch):
     monkeypatch.setenv("JOBMATCH_DIR", str(tmp_path))
     monkeypatch.setenv("JOBMATCH_NOTIFIER", "console")
 
-    import jobmatch.config.paths as paths
     import jobmatch.config as config
+    import jobmatch.config.paths as paths
     import jobmatch.database as database
     import jobmatch.notify as notify
 

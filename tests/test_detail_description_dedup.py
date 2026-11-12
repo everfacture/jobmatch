@@ -15,7 +15,6 @@ import importlib
 
 import pytest
 
-
 DUPLICATE = "Procurement Manager role. " * 80
 DIFFERENT = "A genuinely different scraped detail page body. " * 80
 

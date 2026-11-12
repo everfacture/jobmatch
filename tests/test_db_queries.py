@@ -6,10 +6,10 @@ def tmp_jobmatch_env(tmp_path, monkeypatch):
     monkeypatch.setenv("JOBMATCH_DIR", str(tmp_path))
     monkeypatch.setenv("JOBMATCH_PROFILE", "test")
 
+    import importlib
+
     from jobmatch import config as jobmatch_config
     from jobmatch.config import paths as jobmatch_paths
-
-    import importlib
     importlib.reload(jobmatch_paths)
     importlib.reload(jobmatch_config)
 

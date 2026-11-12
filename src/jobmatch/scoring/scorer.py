@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from dotenv import load_dotenv
@@ -306,7 +306,7 @@ def run_scoring(limit: int = 0, rescore: bool = False, min_score: int = 7,
     all_results.sort(key=lambda r: job_order.get(r["url"], 999999))
 
     # Write scores to DB in batches of 50
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     run_id = current_run_id()
     batch_size = 50
     for idx, r in enumerate(all_results):

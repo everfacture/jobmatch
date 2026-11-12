@@ -11,13 +11,13 @@ import logging
 import re
 import sqlite3
 import urllib.request
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from html.parser import HTMLParser
 
 from jobmatch import config
-from jobmatch.config import CONFIG_DIR, location_ok, load_location_accept_reject
+from jobmatch.config import CONFIG_DIR, load_location_accept_reject, location_ok
 from jobmatch.config.locations import location_accepts_remote
-from jobmatch.database import get_connection, init_db, current_run_id
+from jobmatch.database import current_run_id, get_connection, init_db
 
 log = logging.getLogger(__name__)
 
@@ -175,7 +175,7 @@ def fetch_details(employer: dict, jobs: list[dict]) -> None:
 
 def store_results(conn: sqlite3.Connection, jobs: list[dict], employer_name: str) -> tuple[int, int]:
     """Store corporate jobs in DB. Returns (new, existing)."""
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     new = 0
     existing = 0
     run_id = current_run_id()

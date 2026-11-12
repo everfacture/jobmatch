@@ -23,10 +23,11 @@ import re
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
+
 from jobmatch.config.paths import ENV_PATH
 from jobmatch.database import ensure_notification_history, get_connection
 
@@ -249,7 +250,7 @@ def _fetch_pending_jobs(min_score: int) -> PendingJobs:
     for r in rows:
         job = dict(r)
         if _is_previously_notified(conn, job):
-            now = datetime.now(timezone.utc).isoformat()
+            now = datetime.now(UTC).isoformat()
             conn.execute(
                 "UPDATE jobs SET notified_at = ?, notify_error = NULL WHERE url = ?",
                 (now, job.get("url")),
@@ -431,7 +432,7 @@ def _send_7s_list(jobs: list[dict], conn) -> tuple[int, int]:
         else:
             conn.execute(
                 "UPDATE jobs SET notified_at = ?, notify_error = ? WHERE url = ?",
-                (datetime.now(timezone.utc).isoformat(), f"posting closed: {close_reason}", job.get("url")),
+                (datetime.now(UTC).isoformat(), f"posting closed: {close_reason}", job.get("url")),
             )
             closed_marked += 1
     if closed_marked:
@@ -457,7 +458,7 @@ def _send_7s_list(jobs: list[dict], conn) -> tuple[int, int]:
         _send_telegram_message("\n".join(lines))
 
     for job in active_jobs:
-        notified_at = datetime.now(timezone.utc).isoformat()
+        notified_at = datetime.now(UTC).isoformat()
         conn.execute(
             "UPDATE jobs SET notified_at = ?, notify_error = NULL WHERE url = ?",
             (notified_at, job.get("url")),
@@ -586,7 +587,7 @@ class TelegramNotifier(Notifier):
         header = (
             f"🧠 <b>JobMatch Digest — {len(jobs)} jobs score ≥{min_score}</b>\n"
             f"Top score: {jobs[0]['fit_score']}\n"
-            f"{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}"
+            f"{datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}"
         )
         _send_telegram_message(header)
 
@@ -601,7 +602,7 @@ class TelegramNotifier(Notifier):
                 report.closed_marked_notified += 1
                 conn.execute(
                     "UPDATE jobs SET notified_at = ?, notify_error = ? WHERE url = ?",
-                    (datetime.now(timezone.utc).isoformat(), f"posting closed: {close_reason}", job.get("url")),
+                    (datetime.now(UTC).isoformat(), f"posting closed: {close_reason}", job.get("url")),
                 )
                 conn.commit()
                 continue
@@ -610,7 +611,7 @@ class TelegramNotifier(Notifier):
             if _send_telegram_message(text):
                 report.telegram_cards_sent += 1
                 report.fresh_jobs_delivered += 1
-                notified_at = datetime.now(timezone.utc).isoformat()
+                notified_at = datetime.now(UTC).isoformat()
                 conn.execute(
                     "UPDATE jobs SET notified_at = ?, notify_error = NULL WHERE url = ?",
                     (notified_at, job.get("url")),
@@ -659,7 +660,7 @@ class ConsoleNotifier(Notifier):
 
         print(f"\n  {'=' * 60}")
         print(f"  JobMatch Digest — {len(jobs)} high-fit jobs (score ≥ {min_score})")
-        print(f"  {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
+        print(f"  {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}")
         print(f"  {'=' * 60}")
 
         conn = get_connection()
@@ -680,7 +681,7 @@ class ConsoleNotifier(Notifier):
                 first_line = reasoning.split("\n")[0][:120]
                 print(f"     → {first_line}")
 
-            notified_at = datetime.now(timezone.utc).isoformat()
+            notified_at = datetime.now(UTC).isoformat()
             conn.execute(
                 "UPDATE jobs SET notified_at = ?, notify_error = NULL WHERE url = ?",
                 (notified_at, job.get("url")),
@@ -720,7 +721,7 @@ class FileNotifier(Notifier):
         with open(self.path, "a", encoding="utf-8") as f:
             f.write(f"\n{'=' * 60}\n")
             f.write(f"JobMatch Digest — {len(jobs)} high-fit jobs (score ≥ {min_score})\n")
-            f.write(f"{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}\n")
+            f.write(f"{datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}\n")
             f.write(f"{'=' * 60}\n")
 
             for job in jobs:
@@ -732,7 +733,7 @@ class FileNotifier(Notifier):
                 if reasoning:
                     f.write(f"  → {reasoning.split(chr(10))[0][:120]}\n")
 
-                notified_at = datetime.now(timezone.utc).isoformat()
+                notified_at = datetime.now(UTC).isoformat()
                 conn.execute(
                     "UPDATE jobs SET notified_at = ?, notify_error = NULL WHERE url = ?",
                     (notified_at, job.get("url")),

@@ -11,13 +11,13 @@ import logging
 import os
 import sqlite3
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from jobspy import scrape_jobs
 
 from jobmatch import config
 from jobmatch.config.locations import location_accepts_remote, location_ok
-from jobmatch.database import get_connection, init_db, current_run_id
+from jobmatch.database import current_run_id, get_connection, init_db
 from jobmatch.discovery.titlefilter import title_excluded as _title_excluded
 
 log = logging.getLogger(__name__)
@@ -167,7 +167,7 @@ def _location_ok(
 
 def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tuple[int, int]:
     """Store JobSpy DataFrame results into the DB. Returns (new, existing)."""
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     new = 0
     existing = 0
 
@@ -322,8 +322,9 @@ def _run_one_search(
         log.error("[%s]: all sites failed", label)
         return {"new": 0, "existing": 0, "errors": 1, "filtered": 0, "total": 0, "label": label}
 
-    import pandas as pd
     import warnings
+
+    import pandas as pd
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", FutureWarning)
         df = pd.concat(all_dfs, ignore_index=True) if len(all_dfs) > 1 else all_dfs[0]

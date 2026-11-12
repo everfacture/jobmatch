@@ -5,7 +5,6 @@ from jobmatch.scoring.rules import (
     score_by_rules,
 )
 
-
 PREFERENCES = {
     "scoring": {
         "target_roles": ["Backend Engineer", "Software Engineer"],

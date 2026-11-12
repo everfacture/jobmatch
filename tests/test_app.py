@@ -2,9 +2,9 @@ import threading
 import urllib.error
 import urllib.parse
 import urllib.request
+from http.server import ThreadingHTTPServer
 
 from jobmatch.app import HOST, Handler, pick_port
-from http.server import ThreadingHTTPServer
 
 
 def _serve():

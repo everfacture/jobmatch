@@ -1,6 +1,7 @@
 """Sites registry: blocked sites, manual ATS, SSO, base URLs."""
 
 import yaml
+
 from jobmatch.config.paths import CONFIG_DIR
 
 

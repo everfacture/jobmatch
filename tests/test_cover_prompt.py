@@ -1,6 +1,5 @@
 from jobmatch.scoring.cover_letter import _build_cover_letter_prompt
 
-
 PROFILE = {
     "personal": {"full_name": "Candidate Example", "preferred_name": "Candidate"},
     "skills_boundary": {

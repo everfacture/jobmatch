@@ -12,7 +12,7 @@ import logging
 import os
 import re
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from jobmatch.config import COVER_LETTER_DIR, RESUME_PATH, load_preferences, load_profile
@@ -416,7 +416,7 @@ def run_cover_letters(min_score: int = 7, limit: int = 20,
     run_id = current_run_id()
     saved = 0
     for r in all_results:
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         if r["error"] is None:
             conn.execute(
                 "UPDATE jobs SET cover_letter_path=?, cover_letter_at=?, covered_run_id=?, "

@@ -6,12 +6,11 @@ New code should import directly from submodules:
 """
 
 from jobmatch.llm.client import (
-    get_client,
     LLMClient,
     ModelEntry,
     _maybe_prepend_no_think,
+    get_client,
 )
-
 from jobmatch.llm.parsing import (
     extract_json,
     parse_marker_lines,

@@ -16,7 +16,7 @@ import os
 import re
 import sqlite3
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from jobmatch.config import DB_PATH, PROFILE_NAME
@@ -370,7 +370,7 @@ def record_llm_usage(
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
-            datetime.now(timezone.utc).isoformat(), run_id, stage,
+            datetime.now(UTC).isoformat(), run_id, stage,
             provider_label, model, prompt_tokens, completion_tokens,
             total_tokens, estimated_cost_usd, request_count, elapsed_ms,
             1 if success else 0, error,
@@ -536,7 +536,7 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
     Returns:
         Tuple of (new_count, duplicate_count).
     """
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     new = 0
     existing = 0
 
@@ -684,7 +684,7 @@ def start_pipeline_run(stages: list[str], min_score: int, workers: int,
     """Create a durable record for one pipeline execution."""
     if conn is None:
         conn = get_connection()
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     cur = conn.execute(
         """
         INSERT INTO pipeline_runs (profile_name, started_at, stages, min_score, workers, status)
@@ -702,7 +702,7 @@ def finish_pipeline_run(run_id: int, status: str, summary: dict | None = None,
     """Mark a pipeline run completed or failed."""
     if conn is None:
         conn = get_connection()
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     conn.execute(
         """
         UPDATE pipeline_runs
