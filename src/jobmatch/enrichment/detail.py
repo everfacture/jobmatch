@@ -10,6 +10,7 @@ Three-tier extraction cascade (cheapest first):
   Tier 3: LLM-assisted extraction (1 LLM call)
 """
 
+import functools
 import json
 import logging
 import re
@@ -46,8 +47,9 @@ def set_proxy(proxy_str: str | None):
 
 # -- URL resolution ----------------------------------------------------------
 
+@functools.cache
 def _load_base_urls() -> dict[str, str | None]:
-    """Load site base URLs from config/sites.yaml."""
+    """Load site base URLs from config/sites.yaml once per process."""
     from jobmatch.config import load_base_urls
     return load_base_urls()
 
@@ -81,16 +83,18 @@ def resolve_url(raw_url: str, site: str) -> str | None:
 
 def resolve_all_urls(conn: sqlite3.Connection) -> dict:
     """Resolve all relative URLs in the database. Returns stats."""
-    rows = conn.execute("SELECT url, site FROM jobs").fetchall()
+    # Only relative URLs need work; absolute ones are counted, not loaded.
+    already_absolute = conn.execute(
+        "SELECT COUNT(*) FROM jobs WHERE url LIKE 'http://%' OR url LIKE 'https://%'"
+    ).fetchone()[0]
+    rows = conn.execute(
+        "SELECT url, site FROM jobs WHERE url NOT LIKE 'http://%' AND url NOT LIKE 'https://%'"
+    ).fetchall()
     resolved = 0
     failed = 0
-    already_absolute = 0
 
     for row in rows:
         url, site = row[0], row[1]
-        if url.startswith("http://") or url.startswith("https://"):
-            already_absolute += 1
-            continue
 
         new_url = resolve_url(url, site)
         if new_url and new_url != url:
@@ -111,7 +115,7 @@ def resolve_all_urls(conn: sqlite3.Connection) -> dict:
     rows = conn.execute(
         "SELECT url, site, application_url FROM jobs "
         "WHERE application_url IS NOT NULL AND application_url != '' "
-        "AND application_url NOT LIKE 'http%'"
+        "AND application_url NOT LIKE 'http%' AND LOWER(application_url) NOT IN ('none', 'nan', 'null')"
     ).fetchall()
     for row in rows:
         url, site, app_url = row[0], row[1], row[2]

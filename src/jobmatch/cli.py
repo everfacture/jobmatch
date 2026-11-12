@@ -179,16 +179,22 @@ def run(
     if notify and not no_notify:
         os.environ["JOBMATCH_NOTIFY"] = "1"
 
-    result = run_pipeline(
-        stages=stage_list,
-        min_score=min_score,
-        dry_run=dry_run,
-        workers=workers,
-        score_limit=score_limit,
-        validation_mode=validation,
-        rescore=rescore,
-        with_resume=with_resume,
-    )
+    from jobmatch.runlock import RunLocked
+
+    try:
+        result = run_pipeline(
+            stages=stage_list,
+            min_score=min_score,
+            dry_run=dry_run,
+            workers=workers,
+            score_limit=score_limit,
+            validation_mode=validation,
+            rescore=rescore,
+            with_resume=with_resume,
+        )
+    except RunLocked as exc:
+        console.print(f"[yellow]Skipped:[/yellow] {exc}. It will run next time.")
+        raise typer.Exit(code=0) from None
 
     if not dry_run:
         from jobmatch.view import open_dashboard, should_open_dashboard

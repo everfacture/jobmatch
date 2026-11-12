@@ -259,25 +259,30 @@ def run_pipeline(
     # Bootstrap
     load_env()
     ensure_dirs()
-    init_db()
 
-    # Pre-run stats
-    pre_stats = get_stats()
-    console.print(f"  DB:        {pre_stats['total']} jobs, {pre_stats['pending_detail']} pending enrichment")
+    from jobmatch.config.paths import APP_DIR
+    from jobmatch.runlock import run_lock
 
-    # Execute
-    run_id = start_pipeline_run(ordered, min_score, workers)
-    os.environ["JOBMATCH_RUN_ID"] = str(run_id)
-    try:
-        result = _run_sequential(
-            ordered, min_score, workers=workers,
-            score_limit=score_limit,
-            validation_mode=validation_mode, rescore=rescore,
-        )
-        finish_pipeline_run(run_id, "error" if result.get("errors") else "ok", result)
-    except Exception as e:
-        finish_pipeline_run(run_id, "error", error=str(e))
-        raise
+    with run_lock(APP_DIR):
+        init_db()
+
+        # Pre-run stats
+        pre_stats = get_stats()
+        console.print(f"  DB:        {pre_stats['total']} jobs, {pre_stats['pending_detail']} pending enrichment")
+
+        # Execute
+        run_id = start_pipeline_run(ordered, min_score, workers)
+        os.environ["JOBMATCH_RUN_ID"] = str(run_id)
+        try:
+            result = _run_sequential(
+                ordered, min_score, workers=workers,
+                score_limit=score_limit,
+                validation_mode=validation_mode, rescore=rescore,
+            )
+            finish_pipeline_run(run_id, "error" if result.get("errors") else "ok", result)
+        except Exception as e:
+            finish_pipeline_run(run_id, "error", error=str(e))
+            raise
 
     # Summary table
     console.print(f"\n{'=' * 70}")

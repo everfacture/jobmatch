@@ -165,6 +165,19 @@ def _location_ok(
 
 # -- DB storage (JobSpy DataFrame -> SQLite) ---------------------------------
 
+_MISSING = {"", "nan", "none", "nat", "null"}
+
+
+def _cell(row, key: str) -> str | None:
+    """A DataFrame cell as text, or None. pandas/JobSpy give NaN or None for
+    missing values, and str() turns those into the strings 'nan' and 'None'."""
+    value = row.get(key)
+    if value is None:
+        return None
+    text = str(value).strip()
+    return None if text.lower() in _MISSING else text
+
+
 def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tuple[int, int]:
     """Store JobSpy DataFrame results into the DB. Returns (new, existing)."""
     now = datetime.now(UTC).isoformat()
@@ -172,24 +185,24 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
     existing = 0
 
     for _, row in df.iterrows():
-        url = str(row.get("job_url", ""))
-        if not url or url == "nan":
+        url = _cell(row, "job_url")
+        if not url:
             continue
 
-        title = str(row.get("title", "")) if str(row.get("title", "")) != "nan" else None
-        description = str(row.get("description", "")) if str(row.get("description", "")) != "nan" else None
-        company = str(row.get("company", "")) if str(row.get("company", "")) != "nan" else None
+        title = _cell(row, "title")
+        description = _cell(row, "description")
+        company = _cell(row, "company")
         if not company:
             from jobmatch.database import extract_company
             company = extract_company(description, title)
-        location_str = str(row.get("location", "")) if str(row.get("location", "")) != "nan" else None
+        location_str = _cell(row, "location")
 
         # Build salary string from min/max
         salary = None
         min_amt = row.get("min_amount")
         max_amt = row.get("max_amount")
-        interval = str(row.get("interval", "")) if str(row.get("interval", "")) != "nan" else ""
-        currency = str(row.get("currency", "")) if str(row.get("currency", "")) != "nan" else ""
+        interval = _cell(row, "interval") or ""
+        currency = _cell(row, "currency") or ""
         if min_amt and str(min_amt) != "nan":
             if max_amt and str(max_amt) != "nan":
                 salary = f"{currency}{int(float(min_amt)):,}-{currency}{int(float(max_amt)):,}"
@@ -214,12 +227,12 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
             detail_scraped_at = now
 
         # Extract apply URL if JobSpy provided it
-        apply_url = str(row.get("job_url_direct", "")) if str(row.get("job_url_direct", "")) != "nan" else None
+        apply_url = _cell(row, "job_url_direct")
 
         # Extract posting date if JobSpy provided it
         date_posted = None
         raw_date = row.get("date_posted")
-        if raw_date is not None and str(raw_date) != "nan":
+        if _cell(row, "date_posted"):
             date_posted = str(raw_date)
 
         try:
@@ -237,6 +250,68 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
 
     conn.commit()
     return new, existing
+
+
+# -- Fetch only what is new ---------------------------------------------------
+
+def _drop_known_urls(conn: sqlite3.Connection, df):
+    """Remove rows whose job URL is already stored. Returns (df, dropped)."""
+    if df is None or len(df) == 0 or "job_url" not in df:
+        return df, 0
+    urls = [u for u in (_cell({"u": v}, "u") for v in df["job_url"]) if u]
+    if not urls:
+        return df, 0
+    marks = ",".join("?" * len(urls))
+    known = {r[0] for r in conn.execute(f"SELECT url FROM jobs WHERE url IN ({marks})", urls)}
+    if not known:
+        return df, 0
+    keep = ~df["job_url"].isin(known)
+    return df[keep], int((~keep).sum())
+
+
+_LINKEDIN_DETAIL_DELAY = float(os.environ.get("JOBMATCH_LINKEDIN_DETAIL_DELAY", "1.5"))
+
+
+def _linkedin_detail_fetcher():
+    """One JobSpy LinkedIn session reused for detail pages, or None if the
+    installed JobSpy no longer exposes it. Rows then reach enrich instead."""
+    try:
+        from jobspy.linkedin import LinkedIn
+        from jobspy.model import DescriptionFormat, ScraperInput, Site
+
+        scraper = LinkedIn()
+        scraper.scraper_input = ScraperInput(
+            site_type=[Site.LINKEDIN], description_format=DescriptionFormat.MARKDOWN
+        )
+        return scraper._get_job_details
+    except Exception as e:  # noqa: BLE001 -- optional speed path, enrich covers it
+        log.warning("LinkedIn detail fetch unavailable (%s); new rows go to enrich", e)
+        return None
+
+
+def _fill_linkedin_details(df, fetch=None) -> int:
+    """Fetch description and apply link for new LinkedIn rows that lack one."""
+    if df is None or len(df) == 0 or "site" not in df:
+        return 0
+    todo = [i for i, row in df.iterrows()
+            if str(row.get("site")).lower() == "linkedin" and not _cell(row, "description")]
+    if not todo:
+        return 0
+    fetch = fetch or _linkedin_detail_fetcher()
+    if fetch is None:
+        return 0
+    fetched = 0
+    for n, idx in enumerate(todo):
+        job_id = str(df.at[idx, "job_url"]).rstrip("/").rsplit("/", 1)[-1]
+        if n:
+            time.sleep(_LINKEDIN_DETAIL_DELAY)
+        details = fetch(job_id) or {}
+        if details.get("description"):
+            df.at[idx, "description"] = details["description"]
+            fetched += 1
+        if details.get("job_url_direct") and "job_url_direct" in df:
+            df.at[idx, "job_url_direct"] = details["job_url_direct"]
+    return fetched
 
 
 # -- Single search execution -------------------------------------------------
@@ -264,7 +339,7 @@ def _run_one_search(
 
     # Per-location Indeed country mapping
     loc_label = s.get("location_label", s["location"].split(",")[0])
-    country_indeed = country_indeed_map.get(loc_label, defaults.get("country_indeed", "usa"))
+    country_indeed = (country_indeed_map or {}).get(loc_label, defaults.get("country_indeed", "usa"))
 
     # Split sites: Glassdoor needs simplified location, others use original
     gd_location = glassdoor_map.get(s["location"], s["location"].split(",")[0])
@@ -289,8 +364,8 @@ def _run_one_search(
             kwargs["is_remote"] = True
         if proxy_config:
             kwargs["proxies"] = [proxy_config["jobspy"]]
-        if "linkedin" in other_sites:
-            kwargs["linkedin_fetch_description"] = True
+        # Cards only. Descriptions for new LinkedIn rows are fetched after the
+        # known-URL, location and title filters (_fill_linkedin_details).
         try:
             df = _scrape_with_retry(kwargs, max_retries=max_retries)
             all_dfs.append(df)
@@ -336,7 +411,7 @@ def _run_one_search(
     # Filter by location before storing
     before = len(df)
     df = df[df.apply(lambda row: _location_ok(
-        str(row.get("location", "")) if str(row.get("location", "")) != "nan" else None,
+        _cell(row, "location"),
         accept_locs, reject_locs,
         accept_remote=accept_remote,
     ), axis=1)]
@@ -350,7 +425,7 @@ def _run_one_search(
         before_title = len(df)
         df = df[~df.apply(
             lambda row: _title_excluded(
-                str(row.get("title", "")) if str(row.get("title", "")) != "nan" else "",
+                _cell(row, "title") or "",
                 exclude_titles,
             ),
             axis=1,
@@ -358,7 +433,12 @@ def _run_one_search(
         title_filtered = before_title - len(df)
 
     conn = get_connection()
+    df, known = _drop_known_urls(conn, df)
+    fetched = _fill_linkedin_details(df)
     new, existing = store_jobspy_results(conn, df, s["query"])
+    existing += known
+    if fetched:
+        log.debug("[%s] fetched %d LinkedIn detail pages", label, fetched)
 
     msg = f"[{label}] {before} results -> {new} new, {existing} dupes"
     if filtered:
@@ -416,9 +496,6 @@ def search_jobs(
     if proxy_config:
         kwargs["proxies"] = [proxy_config["jobspy"]]
 
-    if "linkedin" in sites:
-        kwargs["linkedin_fetch_description"] = True
-
     try:
         df = scrape_jobs(**kwargs)
     except Exception as e:
@@ -437,7 +514,10 @@ def search_jobs(
             log.info("  %s: %d", site, count)
 
     conn = init_db()
+    df, known = _drop_known_urls(conn, df)
+    _fill_linkedin_details(df)
     new, existing = store_jobspy_results(conn, df, query)
+    existing += known
     log.info("Stored: %d new, %d already in DB", new, existing)
 
     db_total = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
