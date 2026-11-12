@@ -25,6 +25,9 @@ jobs:
       - name: Install dependencies
         run: pip install -e ".[dev]"
 
+      - name: Privacy check
+        run: python scripts/privacy_check.py --no-denylist
+
       - name: Lint
         run: ruff check src/ tests/
 

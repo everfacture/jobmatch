@@ -33,9 +33,9 @@ def _post(pid, date, body):
 
 
 PAGE = "<html><body>" + "".join([
-    _post("33694", "2026-09-26", "Shop Assistant<br>Kirim CV ke: career@sensatia.com"),
+    _post("33694", "2026-09-26", "Shop Assistant<br>Kirim CV ke: career@shop.example"),
     _post("33696", "2026-09-27", "HOUSEKEEPING TRAINEE<br>FRONT OFFICE TRAINEE"),
-    _post("33690", "2026-09-26", "PR &amp; MARKETING OFFICER<br>SEND YOUR CV TO: x@y.com"),
+    _post("33690", "2026-09-26", "PR &amp; MARKETING OFFICER<br>SEND YOUR CV TO: x@y.example"),
     # numeric entity must be decoded
     _post("8727", "2026-09-22", "Kabar gembira&#33; Lowongan"),
     # junk: bare URL repost
@@ -63,7 +63,7 @@ def test_strip_html_decodes_numeric_and_named_entities():
 
 
 def test_title_extraction_keeps_real_roles():
-    assert _telegram_job_title("Shop Assistant\nKirim CV ke: x@y.com") == "Shop Assistant"
+    assert _telegram_job_title("Shop Assistant\nKirim CV ke: x@y.example") == "Shop Assistant"
     assert _telegram_job_title("HOUSEKEEPING TRAINEE\nFRONT OFFICE TRAINEE") == "HOUSEKEEPING TRAINEE"
     assert "MARKETING" in _telegram_job_title("PR &amp; MARKETING OFFICER")
 
@@ -196,7 +196,7 @@ def test_self_describing_source_is_immediately_scorable(monkeypatch):
         description TEXT, full_description TEXT, location TEXT, site TEXT, strategy TEXT,
         discovered_at TEXT, discovered_run_id INTEGER, date_posted TEXT,
         detail_scraped_at TEXT, detail_error TEXT)""")
-    body = "FRONT OFFICE TRAINEE\nKirim CV ke: career@sensatia.com"
+    body = "FRONT OFFICE TRAINEE\nKirim CV ke: career@shop.example"
     new, _ = st._store_jobs_filtered(
         conn, [{"url": "https://t.me/carikerja_bali/1", "title": "Front Office Trainee",
                 "description": body, "location": "Bali, Indonesia", "date_posted": "2026-09-27"}],

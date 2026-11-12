@@ -49,7 +49,7 @@ def test_various_positions_with_different_bodies_both_stay():
     _add(conn, "https://t.me/carikerja_bali/1", "Various Positions", "",
          "Email: hr@example.com", 9, "2026-09-29T00:00:00")
     _add(conn, "https://t.me/carikerja_bali/2", "Various Positions", "",
-         "Email: recruitment@thenest.com", 9, "2026-10-06T00:00:00")
+         "Email: recruitment@nest.example", 9, "2026-10-06T00:00:00")
     result = run_dedup(conn)
     assert result["duplicates_removed"] == 0
     assert _status(conn, "https://t.me/carikerja_bali/1") == ("active", None)
@@ -59,11 +59,11 @@ def test_various_positions_with_different_bodies_both_stay():
 def test_same_title_no_company_collapses_only_when_body_matches():
     conn = _db()
     _add(conn, "https://t.me/carikerja_bali/1", "GUEST SERVICE AGENT", "",
-         "Send CV to hrd@hotel-a.com", 9, "2026-10-08T00:00:00")
+         "Send CV to hrd@hotel-a.example", 9, "2026-10-08T00:00:00")
     _add(conn, "https://t.me/carikerja_bali/2", "GUEST SERVICE AGENT", "",
-         "Send CV to hrd@hotel-a.com", 8, "2026-10-12T00:00:00")
+         "Send CV to hrd@hotel-a.example", 8, "2026-10-12T00:00:00")
     _add(conn, "https://t.me/carikerja_bali/3", "GUEST SERVICE AGENT", "",
-         "Send CV to hrd@hotel-b.com", 9, "2026-10-12T01:00:00")
+         "Send CV to hrd@hotel-b.example", 9, "2026-10-12T01:00:00")
     result = run_dedup(conn)
     assert result["by_title_only"] == 1
     assert _status(conn, "https://t.me/carikerja_bali/1")[0] == "active"
