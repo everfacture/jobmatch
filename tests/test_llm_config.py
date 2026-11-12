@@ -20,6 +20,8 @@ _ENV_KEYS = [
     "FALLBACK_LLM_API_KEY",
     "FALLBACK_LLM_MODEL",
     "FALLBACK_LLM_EXTRA_BODY",
+    "LLM_AUTH",
+    "JOBMATCH_LLM_AUTH",
     "OPENAI_API_KEY",
     "GEMINI_API_KEY",
 ]
@@ -93,6 +95,19 @@ def test_provider_specific_openai_key_keeps_old_wizard_users_working(monkeypatch
     assert chain[0].base_url == "https://api.openai.com/v1"
     assert chain[0].api_key == "openai-key"
     assert chain[0].name == "gpt-4o-mini"
+
+
+def test_claude_oauth_needs_no_static_key(monkeypatch):
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("LLM_URL", "https://api.anthropic.com")
+    monkeypatch.setenv("LLM_MODEL", "claude-haiku-5-5")
+    monkeypatch.setenv("LLM_AUTH", "claude-oauth")
+
+    chain = _build_fallback_chain()
+
+    assert chain[0].auth == "claude-oauth"
+    assert chain[0].api_key == ""
+    assert chain[0].name == "claude-haiku-5-5"
 
 
 def test_canonical_qwen_model_gets_no_think(monkeypatch):

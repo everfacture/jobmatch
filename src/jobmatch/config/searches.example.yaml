@@ -32,7 +32,10 @@ locations:
 
 # Location filtering — applied after discovery to job location text.
 # Keep accept_patterns broad enough for your target markets, and reject hard blockers.
+# accept_remote defaults to true: a location containing remote/anywhere/WFH passes
+# even when it misses accept_patterns. Set false for a real region-only search.
 location:
+  accept_remote: true
   accept_patterns:
     - "Remote"
     - "Anywhere"

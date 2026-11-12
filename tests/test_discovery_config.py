@@ -45,6 +45,7 @@ def test_full_crawl_accepts_wizard_generated_location_without_label(monkeypatch)
         glassdoor_map,
         country_indeed_map=None,
         exclude_titles=None,
+        accept_remote=True,
     ):
         searches.append(search)
         return {"new": 0, "existing": 0, "errors": 0, "filtered": 0, "total": 0, "label": "test"}
@@ -82,3 +83,23 @@ def test_full_crawl_accepts_wizard_generated_location_without_label(monkeypatch)
             "tier": 1,
         }
     ]
+
+
+def test_region_only_filter_rejects_remote_and_other_islands():
+    from jobmatch.config.locations import location_accepts_remote, location_ok
+
+    accept = ["Bali", "Denpasar", "Kuta", "Ubud"]
+    reject = ["Lombok", "Jakarta", "Bandung", "Balikpapan"]
+    cfg = {"location": {"accept_remote": False, "accept_patterns": accept, "reject_patterns": reject}}
+
+    assert location_accepts_remote(cfg) is False
+    assert location_accepts_remote({}) is True
+    assert location_ok("Denpasar, Bali, Indonesia", accept, reject, accept_remote=False)
+    assert location_ok("Kuta, Bali", accept, reject, accept_remote=False)
+    assert location_ok("Remote, Bali", accept, reject, accept_remote=False)
+    assert not location_ok("Remote", accept, reject, accept_remote=False)
+    assert not location_ok("Jakarta, Indonesia", accept, reject, accept_remote=False)
+    assert not location_ok("Kuta, Lombok", accept, reject, accept_remote=False)
+    assert not location_ok("Balikpapan", accept, reject, accept_remote=False)
+    assert location_ok("Remote", accept, reject, accept_remote=True)
+    assert location_ok("", accept, reject, accept_remote=False)

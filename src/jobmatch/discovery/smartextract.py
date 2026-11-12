@@ -430,10 +430,11 @@ def _telegram_query_relevant(title: str, body: str, query: str) -> bool:
 
 # HHRMA Bali. robots.txt (User-agent: *) disallows /wp-json/, /?rest_route=,
 # /wp-admin/ (including admin-ajax.php) and /feed/. A 200 from the REST API is
-# not permission. HTML /page/N and category archives repeat the same 12
-# preloaded cards, so they are not a backfill route. The sitemap is linked from
-# robots.txt, and each post page is ordinary HTML that already contains the
-# full advert. Fetch those once per process, then filter in memory.
+# not permission. The board moved off WordPress post permalinks onto
+# /job/<id>/ pages listed in job-sitemap.xml (linked from the sitemap index).
+# Fetch that sitemap and those pages once per process, then filter in memory.
+# A sitemap that yields nothing is a warning: the old theme's selectors matched
+# zero pages and the stage still reported ok.
 _HHRMA_SITEMAP_INDEX = "https://www.hhrmabali.com/sitemap_index.xml"
 _HHRMA_JOB_CACHE: list[dict] | None = None
 _HHRMA_REQUESTS = 0
@@ -444,10 +445,17 @@ _HHRMA_MONTHS = {
     "july": 7, "august": 8, "september": 9, "october": 10, "november": 11, "december": 12,
 }
 _HHRMA_LOC_RE = re.compile(r"<(?:\w+:)?loc>([^<]+)</(?:\w+:)?loc>")
-_HHRMA_ENTRY_RE = re.compile(
-    r"<(?:\w+:)?loc>([^<]+)</(?:\w+:)?loc>\s*<(?:\w+:)?lastmod>([^<]+)</(?:\w+:)?lastmod>",
-    re.S,
-)
+# Board taxonomy that is not Bali. Stored bare so the profile location gate can
+# reject them. Every other /location/ slug on this board is a Bali place, and
+# several (Sidemen, Pererenan, Kintamani) are not in the profile accept list,
+# so those get a ", Bali" suffix. Do not stamp Bali onto the foreign set.
+_HHRMA_NON_BALI_SLUGS = frozenset({
+    "gili-trawangan",
+    "jakarta",
+    "lombok",
+    "sumbawa",
+    "west-nusa-tenggara",
+})
 
 
 def _hhrma_enabled() -> bool:
@@ -500,56 +508,87 @@ def _hhrma_text(fragment: str) -> str:
     return "\n".join(ln for ln in lines if ln).strip()
 
 
-def _hhrma_section(page: str, element_id: str, end_ids: tuple[str, ...]) -> str:
-    start = re.search(rf'id="{element_id}"[^>]*>', page)
-    if not start:
-        return ""
-    rest = page[start.end():]
-    end_at = len(rest)
-    for eid in end_ids:
-        marker = re.search(rf'<div id="{eid}"', rest)
-        if marker:
-            end_at = min(end_at, marker.start())
-    return rest[:end_at][:12000]
-
-
-_HHRMA_BOILER_RE = re.compile(
-    r"^(?:we are hiring(?: professionals\b.*)?|apply now|requirements|qualifications|"
-    r"about the role|how to apply|career guides|key responsibilit\w*|"
-    r"your responsibilities|responsibilities|persyaratan|lingkup pekerjaan|"
-    r"gaji|join our|please send|min \d)\b",
-    re.I,
-)
-
-
-def _hhrma_usable_role(text: str) -> bool:
-    text = text.strip(" *-–—:")
-    if not (3 <= len(text) <= 80) or text.endswith("."):
-        return False
-    if _HHRMA_BOILER_RE.match(text):
-        return False
-    return re.search(r"[A-Za-z]", text) is not None
-
-
-def _hhrma_role_from_page(page: str) -> str:
-    """Role line when the h1 is the employer, not the job.
-
-    Some HHRMA posts put the company in `#job-title` and the role in the body
-    (`Receptionist`, `E-commerce`, `Account Receivable (AR)`).
-    """
-    fragments = (
-        _hhrma_section(page, "single-content", ("how-to-apply",)),
-        _hhrma_section(page, "about-company", ("single-content", "how-to-apply")),
+def _hhrma_location(page: str) -> str:
+    """Area from the board's /location/ link. Foreign slugs stay bare."""
+    match = re.search(
+        r'href="https://www\.hhrmabali\.com/location/([^"/]+)/?"[^>]*>([^<]+)',
+        page,
+        re.I,
     )
-    for fragment in fragments:
-        for heading in re.findall(r"<h[2-4][^>]*>(.*?)</h[2-4]>", fragment, re.S | re.I):
-            text = _hhrma_text(heading)
-            if _hhrma_usable_role(text):
-                return text[:120]
-        for line in _hhrma_text(fragment).split("\n"):
-            if _hhrma_usable_role(line):
-                return line[:120]
-    return ""
+    if not match:
+        return "Bali"
+    slug = match.group(1).strip().lower()
+    area = html.unescape(match.group(2)).strip()
+    if not area:
+        return "Bali"
+    if slug in _HHRMA_NON_BALI_SLUGS or "bali" in area.lower():
+        return area[:120]
+    return f"{area[:80]}, Bali"
+
+
+def _hhrma_parse_post(page: str, source_url: str, lastmod: str = "") -> dict | None:
+    """Parse one /job/<id>/ page. Return None for non-jobs and expired deadlines.
+
+    The live theme (checked 2026-10-18) puts the role in
+    ``h1.lk-job__content-title``, the employer in ``p.lk-job__company``, and
+    the advert in ``div.lk-job__description``. The old ``#job-title`` theme is
+    gone; matching it returned nothing while the sitemap still had live ads.
+    """
+    title_match = re.search(
+        r'<h1 class="lk-job__content-title"[^>]*>(.*?)</h1>',
+        page,
+        re.S | re.I,
+    )
+    title = _hhrma_text(title_match.group(1))[:120] if title_match else ""
+    if len(title) < 2:
+        og = re.search(r'<meta property="og:title" content="([^"]+)"', page)
+        title = html.unescape(og.group(1)).strip()[:120] if og else ""
+    if len(title) < 2:
+        return None
+
+    deadline = _hhrma_parse_deadline(page)
+    if deadline is not None and deadline < _hhrma_today():
+        return None
+
+    company_match = re.search(
+        r'<p class="lk-job__company"[^>]*>(.*?)</p>',
+        page,
+        re.S | re.I,
+    )
+    company = _hhrma_text(company_match.group(1))[:120] if company_match else ""
+    if not company:
+        alt = re.search(
+            r'<img\b[^>]*class="[^"]*lk-job__company-logo-image[^"]*"[^>]*>',
+            page,
+            re.I,
+        )
+        if alt:
+            alt_text = re.search(r'alt="([^"]*)"', alt.group(0))
+            company = html.unescape(alt_text.group(1)).strip()[:120] if alt_text else ""
+
+    start = re.search(r'<div class="lk-job__description"[^>]*>', page, re.I)
+    if not start:
+        return None
+    rest = page[start.end():]
+    end = re.search(r'<section class="lk-job__apply"', rest, re.I)
+    fragment = rest[: end.start() if end else 12000]
+    description = _hhrma_text(fragment)
+    if not description:
+        return None
+
+    published = re.search(r'"datePublished"\s*:\s*"(\d{4}-\d{2}-\d{2})', page)
+    if not published:
+        published = re.search(r'article:published_time" content="(\d{4}-\d{2}-\d{2})', page)
+    canonical = re.search(r'<link rel="canonical" href="([^"]+)"', page)
+    return {
+        "title": title,
+        "url": canonical.group(1) if canonical else source_url,
+        "company": company,
+        "location": _hhrma_location(page),
+        "salary": _hhrma_salary(description),
+        "description": description,
+        "date_posted": published.group(1) if published else (lastmod[:10] or None),
+    }
 
 
 def _hhrma_parse_deadline(text: str) -> date | None:
@@ -574,77 +613,34 @@ def _hhrma_salary(text: str) -> str:
     return re.sub(r"\s+", " ", match.group(0)).strip()
 
 
-def _hhrma_post_sitemap_urls(index_xml: str) -> list[str]:
+def _hhrma_job_sitemap_urls(index_xml: str) -> list[str]:
+    """Job-board sitemaps only. Post sitemaps are the old theme and are stale."""
     locs = [loc.strip() for loc in _HHRMA_LOC_RE.findall(index_xml)]
-    posts = [loc for loc in locs if re.search(r"/post-sitemap\d*\.xml$", loc)]
+    jobs = [loc for loc in locs if re.search(r"/job-sitemap\d*\.xml$", loc)]
 
     def number(url: str) -> int:
-        match = re.search(r"post-sitemap(\d*)\.xml", url)
+        match = re.search(r"job-sitemap(\d*)\.xml", url)
         raw = match.group(1) if match else ""
         return int(raw) if raw else 1
 
-    # Highest file first. Yoast's index lastmod is not trustworthy: post-sitemap.xml
-    # was stamped 2026-09-25 while its newest URL was 2024-10-25.
-    return sorted(set(posts), key=number, reverse=True)
+    return sorted(set(jobs), key=number, reverse=True)
 
 
 def _hhrma_sitemap_entries(xml: str) -> list[tuple[str, date]]:
+    """One (url, date) per <url> block. lastmod is not required to sit next to loc."""
     out: list[tuple[str, date]] = []
-    for loc, lastmod in _HHRMA_ENTRY_RE.findall(xml):
+    blocks = re.findall(r"<(?:\w+:)?url\b[^>]*>(.*?)</(?:\w+:)?url>", xml, re.S)
+    for block in blocks:
+        loc_match = _HHRMA_LOC_RE.search(block)
+        last_match = re.search(r"<(?:\w+:)?lastmod>([^<]+)</(?:\w+:)?lastmod>", block)
+        if not loc_match or not last_match:
+            continue
         try:
-            posted = date.fromisoformat(lastmod.strip()[:10])
+            posted = date.fromisoformat(last_match.group(1).strip()[:10])
         except ValueError:
             continue
-        out.append((loc.strip(), posted))
+        out.append((loc_match.group(1).strip(), posted))
     return out
-
-
-def _hhrma_parse_post(page: str, source_url: str, lastmod: str = "") -> dict | None:
-    """Parse one HHRMA job page. Return None for non-jobs and expired deadlines."""
-    title_match = re.search(r'<h1 id="job-title"[^>]*>(.*?)</h1>', page, re.S)
-    if not title_match:
-        return None
-    title = _hhrma_text(title_match.group(1))[:120]
-    if len(title) < 2:
-        return None
-
-    deadline = _hhrma_parse_deadline(page)
-    if deadline is not None and deadline < _hhrma_today():
-        return None
-
-    company_match = re.search(r'<a class="company-name"[^>]*>(.*?)</a>', page, re.S)
-    company = _hhrma_text(company_match.group(1))[:120] if company_match else ""
-    if not company:
-        # These posts put the employer in the h1 and the role in the body.
-        role = _hhrma_role_from_page(page)
-        if role and role.lower() != title.lower():
-            company = title
-            title = role
-
-    loc_match = re.search(r'id="location-text".*?<a[^>]*>([^<]+)</a>', page, re.S)
-    area = html.unescape(loc_match.group(1)).strip() if loc_match else ""
-    # Do not stamp "Bali" onto a foreign area. "Canggu" already matches the
-    # profile accept list. "Sumbawa" must stay "Sumbawa" so the gate can reject it.
-    location = area or "Bali, Indonesia"
-
-    about = _hhrma_text(_hhrma_section(page, "about-company", ("single-content", "how-to-apply")))
-    body = _hhrma_text(_hhrma_section(page, "single-content", ("how-to-apply",)))
-    apply = _hhrma_text(_hhrma_section(page, "how-to-apply__instruction", ("apply-form",)))
-    description = "\n".join(part for part in (about, body, apply) if part).strip()
-    if not description:
-        return None
-
-    published = re.search(r'article:published_time" content="(\d{4}-\d{2}-\d{2})', page)
-    canonical = re.search(r'<link rel="canonical" href="([^"]+)"', page)
-    return {
-        "title": title,
-        "url": canonical.group(1) if canonical else source_url,
-        "company": company,
-        "location": location,
-        "salary": _hhrma_salary(description),
-        "description": description,
-        "date_posted": published.group(1) if published else (lastmod[:10] or None),
-    }
 
 
 def _hhrma_fetch_jobs() -> list[dict]:
@@ -654,8 +650,13 @@ def _hhrma_fetch_jobs() -> list[dict]:
         log.warning("HHRMA sitemap index returned %s", index.status_code)
         return []
 
+    sitemaps = _hhrma_job_sitemap_urls(index.text)
+    if not sitemaps:
+        log.warning("HHRMA Bali: sitemap index has no job-sitemap — board layout may have moved")
+        return []
+
     selected: list[tuple[str, date]] = []
-    for sitemap_url in _hhrma_post_sitemap_urls(index.text):
+    for sitemap_url in sitemaps:
         resp = _hhrma_get(sitemap_url)
         if resp.status_code != 200:
             log.warning("HHRMA sitemap %s returned %s", sitemap_url, resp.status_code)
@@ -693,10 +694,23 @@ def _hhrma_fetch_jobs() -> list[dict]:
         if job:
             jobs.append(job)
 
-    log.info(
-        "HHRMA Bali: cached %d jobs from %d pages (%d http)",
-        len(jobs), len(selected), _HHRMA_REQUESTS,
-    )
+    if not selected:
+        log.warning(
+            "HHRMA Bali: no job-sitemap entries inside the %d-day window (%d http)",
+            _hhrma_days(),
+            _HHRMA_REQUESTS,
+        )
+    elif not jobs:
+        log.warning(
+            "HHRMA Bali: fetched %d job pages and parsed 0 — page markup may have moved (%d http)",
+            len(selected),
+            _HHRMA_REQUESTS,
+        )
+    else:
+        log.info(
+            "HHRMA Bali: cached %d jobs from %d pages (%d http)",
+            len(jobs), len(selected), _HHRMA_REQUESTS,
+        )
     return jobs
 
 
@@ -716,12 +730,12 @@ def _hhrma_cached_jobs() -> list[dict]:
 
 @register_extractor("HHRMA Bali")
 def _extract_hhrma_bali(name: str, url: str, query: str | None = None) -> list[dict]:
-    """HHRMA Bali hospitality board, via the robots-allowed sitemap and post pages.
+    """HHRMA Bali hospitality board, via job-sitemap.xml and /job/<id>/ pages.
 
-    The public listing is WordPress. The REST API and the Ajax "load more"
-    endpoint are disallowed, and the HTML archive does not paginate. Recent
-    post pages are the advert. Cached per process because run_smart_extract()
-    calls this once per query.
+    robots.txt disallows the REST API and admin-ajax. The advert is the job
+    page. Cached per process because run_smart_extract() calls this once per
+    query. A sitemap or page set that parses to nothing is a warning, not a
+    quiet success.
     """
     global _HHRMA_DISABLED_LOGGED
     if not _hhrma_enabled():

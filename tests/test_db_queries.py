@@ -92,3 +92,26 @@ def test_stats_reflect_seeded_rows(tmp_path, tmp_jobmatch_env):
     assert stats["total"] == 2
     assert stats["pending_detail"] == 2
     assert stats["scored"] == 0
+
+
+def test_enrichment_skips_inactive_jobs(tmp_path, tmp_jobmatch_env):
+    database_mod = tmp_jobmatch_env
+    conn = database_mod.init_db(db_path=tmp_path / "jobmatch.db")
+    database_mod.store_jobs(
+        conn,
+        [{"url": "https://example.test/closed", "title": "Already rejected"}],
+        site="example",
+        strategy="test",
+    )
+    conn.execute("UPDATE jobs SET status = 'low_score'")
+    conn.commit()
+
+    from jobmatch.enrichment.detail import _run_detail_scraper
+
+    stats = _run_detail_scraper(conn, workers=1)
+    row = conn.execute(
+        "SELECT detail_scraped_at FROM jobs WHERE url = 'https://example.test/closed'"
+    ).fetchone()
+
+    assert stats["processed"] == 0
+    assert row[0] is None

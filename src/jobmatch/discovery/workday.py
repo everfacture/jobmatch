@@ -16,6 +16,7 @@ from html.parser import HTMLParser
 
 from jobmatch import config
 from jobmatch.config import CONFIG_DIR, location_ok, load_location_accept_reject
+from jobmatch.config.locations import location_accepts_remote
 from jobmatch.database import get_connection, init_db, current_run_id
 
 log = logging.getLogger(__name__)
@@ -107,6 +108,8 @@ def search_employer(
     search_text: str,
     accept_locs: list[str],
     reject_locs: list[str],
+    *,
+    accept_remote: bool = True,
 ) -> list[dict]:
     """Search one employer, paginate through results, filter by location."""
     name = employer["name"]
@@ -134,7 +137,7 @@ def search_employer(
 
         for j in postings:
             loc = j.get("locationsText", "")
-            if not location_ok(loc, accept_locs, reject_locs):
+            if not location_ok(loc, accept_locs, reject_locs, accept_remote=accept_remote):
                 continue
             all_jobs.append({
                 "title": j.get("title", ""),
@@ -217,6 +220,7 @@ def run_workday_discovery(employers: dict | None = None, workers: int = 1) -> di
         return {"found": 0, "new": 0, "existing": 0, "queries": 0}
 
     accept_locs, reject_locs = load_location_accept_reject(search_cfg)
+    accept_remote = location_accepts_remote(search_cfg)
     init_db()
 
     grand_new = 0
@@ -226,7 +230,9 @@ def run_workday_discovery(employers: dict | None = None, workers: int = 1) -> di
     for i, query in enumerate(queries, 1):
         log.info("Query %d/%d: \"%s\"", i, len(queries), query)
         for emp_key, emp in employers.items():
-            jobs = search_employer(emp, query, accept_locs, reject_locs)
+            jobs = search_employer(
+                emp, query, accept_locs, reject_locs, accept_remote=accept_remote,
+            )
             grand_found += len(jobs)
             if not jobs:
                 continue

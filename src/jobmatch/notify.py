@@ -123,10 +123,18 @@ def _canonical_text(value: object) -> str:
     return text.strip()
 
 
+def _canonical_url_value(value: object) -> str:
+    """Normalize optional URL fields; scraped `None` strings are not real URLs."""
+    raw = str(value or "").strip()
+    if raw.lower() in {"", "none", "null", "n/a", "na"}:
+        return ""
+    return _canonical_text(raw)
+
+
 def _notification_fingerprint(job: dict) -> str:
     """Stable cross-day key for the same job resurfacing under a new row/url."""
-    apply_url = _canonical_text(job.get("application_url"))
-    source_url = _canonical_text(job.get("url"))
+    apply_url = _canonical_url_value(job.get("application_url"))
+    source_url = _canonical_url_value(job.get("url"))
     if apply_url:
         basis = f"application_url:{apply_url}"
     elif source_url:

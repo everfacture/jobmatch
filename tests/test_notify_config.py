@@ -109,6 +109,49 @@ def test_fetch_pending_jobs_skips_previous_day_role_duplicate(tmp_path, monkeypa
     assert row["notify_error"] is None
 
 
+def test_fetch_pending_jobs_treats_string_none_application_url_as_missing(tmp_path, monkeypatch):
+    monkeypatch.setenv("JOBMATCH_DIR", str(tmp_path))
+    monkeypatch.setenv("JOBMATCH_NOTIFIER", "console")
+
+    import jobmatch.config.paths as paths
+    import jobmatch.config as config
+    import jobmatch.database as database
+    import jobmatch.notify as notify
+
+    importlib.reload(paths)
+    importlib.reload(config)
+    importlib.reload(database)
+    importlib.reload(notify)
+
+    conn = database.init_db()
+    for url, title in [
+        ("https://linkedin.example/jobs/one", "Administrative Assistant"),
+        ("https://linkedin.example/jobs/two", "Receptionist"),
+    ]:
+        conn.execute(
+            """
+            INSERT INTO jobs (
+                url, title, company, location, site, status, fit_score, scored_at,
+                full_description, application_url
+            ) VALUES (?, ?, ?, ?, ?, 'active', 8, ?, ?, ?)
+            """,
+            (
+                url,
+                title,
+                "Different Co",
+                "Remote",
+                "linkedin",
+                "2026-07-01T00:00:00+00:00",
+                "Office support role",
+                "None",
+            ),
+        )
+    conn.commit()
+
+    pending = notify._fetch_pending_jobs(8)
+    assert len(pending.jobs) == 2
+    assert pending.history_suppressed == 0
+
 def test_console_notifier_records_history_for_sent_job(tmp_path, monkeypatch):
     monkeypatch.setenv("JOBMATCH_DIR", str(tmp_path))
     monkeypatch.setenv("JOBMATCH_NOTIFIER", "console")

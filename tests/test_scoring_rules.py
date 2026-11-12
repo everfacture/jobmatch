@@ -1,4 +1,9 @@
-from jobmatch.scoring.rules import apply_configured_hard_caps, apply_score_adjustments, score_by_rules
+from jobmatch.scoring.rules import (
+    apply_configured_hard_caps,
+    apply_required_signal_caps,
+    apply_score_adjustments,
+    score_by_rules,
+)
 
 
 PREFERENCES = {
@@ -68,6 +73,34 @@ def test_rules_apply_low_hard_cap_as_deterministic_result():
     assert result["scoring_method"] == "rule:hard_cap:security_clearance"
 
 
+def test_title_scoped_cap_ignores_other_jobs_named_in_the_body():
+    preferences = {
+        "scoring": {
+            "target_roles": ["Guest Service Agent"],
+            "positive_signals": ["guest service", "front desk", "hotel"],
+            "hard_caps": [{
+                "name": "hotel_back_of_house_or_manual_labour",
+                "scope": "title",
+                "patterns": ["waiter"],
+                "max_score": 4,
+            }],
+        }
+    }
+    kept = score_by_rules({
+        "title": "Guest Service Agent (DW)",
+        "company": "Hotel",
+        "full_description": "Also hiring waiter and bartender.",
+    }, preferences)
+    killed = score_by_rules({
+        "title": "Waiter Daily Worker",
+        "company": "Hotel",
+        "full_description": "Serve tables.",
+    }, preferences)
+
+    assert kept is not None and kept["score"] >= 8
+    assert killed is not None and killed["score"] == 4
+
+
 def test_apply_configured_hard_caps_caps_llm_result():
     result = apply_configured_hard_caps(
         {"score": 9, "fit": "Strong", "gap": "", "keywords": "Python", "error": None},
@@ -77,6 +110,65 @@ def test_apply_configured_hard_caps_caps_llm_result():
 
     assert result["score"] == 5
     assert "hard capped" in result["gap"]
+
+
+def test_required_signal_cap_blocks_generic_admin_from_specialised_lane():
+    preferences = {
+        "scoring": {
+            "required_signal_caps": [
+                {
+                    "name": "hands-on creative work",
+                    "patterns": ["florist", "packing", "membungkus", "display produk"],
+                    "max_score": 6,
+                }
+            ]
+        }
+    }
+
+    result = apply_required_signal_caps(
+        {"score": 8, "fit": "Strong general admin fit", "gap": "", "keywords": "admin", "error": None},
+        {"title": "Administrative Assistant", "full_description": "Filing, email, and calendar support."},
+        preferences,
+    )
+
+    assert result["score"] == 6
+    assert "lacks 'hands-on creative work' evidence" in result["gap"]
+
+
+def test_required_signal_cap_keeps_real_packing_role_and_allows_location_boost():
+    preferences = {
+        "scoring": {
+            "required_signal_caps": [
+                {
+                    "name": "hands-on creative work",
+                    "patterns": ["florist", "packing", "membungkus", "display produk"],
+                    "max_score": 6,
+                }
+            ],
+            "location_boosts": [
+                {
+                    "name": "west_java_priority",
+                    "patterns": ["Bandung"],
+                    "points": 1,
+                    "min_base_score": 8,
+                    "max_score": 10,
+                }
+            ],
+        }
+    }
+
+    result = apply_score_adjustments(
+        {"score": 8, "fit": "Good packing fit", "gap": "", "keywords": "packing", "error": None},
+        {
+            "title": "Packer",
+            "location": "Bandung, West Java, Indonesia",
+            "full_description": "Membungkus barang pesanan dan menyiapkan paket.",
+        },
+        preferences,
+    )
+
+    assert result["score"] == 9
+    assert "location boost" in result["fit"]
 
 
 def test_rules_leave_ambiguous_product_role_to_llm():

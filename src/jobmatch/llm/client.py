@@ -37,6 +37,78 @@ log = logging.getLogger(__name__)
 # Model entry
 # ---------------------------------------------------------------------------
 
+_CLAUDE_CODE_PREFIX = "You are Claude Code, Anthropic's official CLI for Claude."
+_claude_code_version_cache: str | None = None
+
+
+def _claude_code_version() -> str:
+    """Installed `claude --version`, else a recent fallback. Cached."""
+    global _claude_code_version_cache
+    if _claude_code_version_cache:
+        return _claude_code_version_cache
+    import shutil
+    import subprocess
+    version = "2.1.74"
+    binary = shutil.which("claude")
+    if binary:
+        try:
+            result = subprocess.run(
+                [binary, "--version"],
+                capture_output=True, text=True, timeout=5, check=False,
+            )
+            head = (result.stdout or "").strip().split()
+            if result.returncode == 0 and head and head[0][0].isdigit():
+                version = head[0]
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    _claude_code_version_cache = version
+    return version
+
+
+def _read_claude_oauth_token() -> str:
+    """Live Claude Code access token. Do not refresh: the refresh token is single-use."""
+    from pathlib import Path
+    path = Path.home() / ".claude" / ".credentials.json"
+    try:
+        record = json.loads(path.read_text(encoding="utf-8")).get("claudeAiOauth") or {}
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError("Claude Code login unreadable; run `claude` once") from exc
+    token = str(record.get("accessToken") or "").strip()
+    expires_at = int(record.get("expiresAt") or 0)
+    if not token:
+        raise RuntimeError("no Claude Code login; run `claude` and log in")
+    if expires_at and int(time.time() * 1000) >= expires_at - 60_000:
+        raise RuntimeError("Claude Code OAuth token expired; run `claude` once to refresh")
+    return token
+
+
+def _openai_messages_to_anthropic(messages: list[dict]) -> tuple[list[dict], list[dict]]:
+    """OpenAI chat messages -> (system blocks, Anthropic messages).
+
+    The first system block must be the Claude Code prefix. Without it the OAuth
+    route answers HTTP 429 with message \"Error\".
+    """
+    system = [{"type": "text", "text": _CLAUDE_CODE_PREFIX}]
+    converted: list[dict] = []
+    for msg in messages:
+        role = msg.get("role") or "user"
+        content = msg.get("content") or ""
+        if not isinstance(content, str):
+            content = str(content)
+        if role == "system":
+            if content.strip():
+                system.append({"type": "text", "text": content})
+            continue
+        anth_role = "assistant" if role == "assistant" else "user"
+        if converted and converted[-1]["role"] == anth_role:
+            converted[-1]["content"] += "\n" + content
+        else:
+            converted.append({"role": anth_role, "content": content})
+    if not converted:
+        converted = [{"role": "user", "content": "OK"}]
+    return system, converted
+
+
 @dataclass(frozen=True)
 class ModelEntry:
     """A model with everything needed to call it."""
@@ -45,6 +117,7 @@ class ModelEntry:
     base_url: str
     api_key: str
     extra_body: dict | None = None
+    auth: str = "bearer"
 
 
 def _env(*names: str, default: str = "") -> str:
@@ -85,6 +158,7 @@ def _build_fallback_chain() -> list[ModelEntry]:
     primary_key = _env("JOBMATCH_LLM_API_KEY", "LLM_API_KEY")
     primary_model = _env("JOBMATCH_LLM_MODEL", "LLM_MODEL", default="deepseek-chat")
     primary_extra = _json_env("JOBMATCH_LLM_EXTRA_BODY", "LLM_EXTRA_BODY")
+    primary_auth = _env("JOBMATCH_LLM_AUTH", "LLM_AUTH") or "bearer"
 
     # Backward-compatible convenience: old wizard versions wrote provider-specific
     # API key names without an OpenAI-compatible base URL. Keep those users working
@@ -105,13 +179,14 @@ def _build_fallback_chain() -> list[ModelEntry]:
 
     chain: list[ModelEntry] = []
 
-    if primary_url and (primary_key or _is_local_url(primary_url)):
+    if primary_url and (primary_key or _is_local_url(primary_url) or primary_auth == "claude-oauth"):
         chain.append(ModelEntry(
             name=primary_model,
             label=f"primary/{primary_model}",
             base_url=primary_url,
             api_key=primary_key,
             extra_body=primary_extra,
+            auth=primary_auth,
         ))
 
     if fallback_url and (fallback_key or _is_local_url(fallback_url)):
@@ -259,6 +334,79 @@ class LLMClient:
     def close(self) -> None:
         self._client.close()
 
+    def _try_claude_oauth(
+        self,
+        entry: ModelEntry,
+        messages: list[dict],
+        max_tokens: int,
+        is_last: bool,
+        stage: str,
+    ) -> str | None:
+        """Claude Code OAuth against the Messages API. Read the login, never refresh it."""
+        started = time.time()
+        try:
+            token = _read_claude_oauth_token()
+        except RuntimeError as exc:
+            log.error("%s %s", entry.label, exc)
+            if is_last:
+                raise
+            return None
+        system, anth_messages = _openai_messages_to_anthropic(messages)
+        body = {
+            "model": entry.name.removesuffix("[1m]"),
+            "max_tokens": max_tokens,
+            "system": system,
+            "messages": anth_messages,
+        }
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "anthropic-version": "2023-06-01",
+            "anthropic-beta": "claude-code-20250219,oauth-2025-04-20",
+            "content-type": "application/json",
+            "user-agent": f"claude-code/{_claude_code_version()} (external, cli)",
+            "x-app": "cli",
+        }
+        try:
+            resp = self._client.post(
+                "https://api.anthropic.com/v1/messages",
+                json=body,
+                headers=headers,
+            )
+        except httpx.TimeoutException:
+            log.warning("%s oauth timeout, trying next model", entry.label)
+            if is_last:
+                raise
+            return None
+        if resp.status_code != 200:
+            # Never log the bearer. A bare 429 "Error" means the Claude Code system prefix was dropped.
+            log.error("%s oauth HTTP %d", entry.label, resp.status_code)
+            if is_last:
+                resp.raise_for_status()
+            return None
+        data = resp.json()
+        parts = [
+            block.get("text", "")
+            for block in data.get("content") or []
+            if isinstance(block, dict) and block.get("type") == "text" and block.get("text")
+        ]
+        text = "\n".join(parts).strip()
+        if not text:
+            log.warning("%s oauth returned no text", entry.label)
+            if is_last:
+                return None
+            return None
+        usage = data.get("usage") or {}
+        prompt = usage.get("input_tokens")
+        completion = usage.get("output_tokens")
+        self._record_usage(entry, {
+            "usage": {
+                "prompt_tokens": prompt,
+                "completion_tokens": completion,
+                "total_tokens": (prompt or 0) + (completion or 0),
+            }
+        }, stage, time.time() - started)
+        return text
+
     # -- internal -----------------------------------------------------------
 
     def _try_entry(
@@ -277,6 +425,8 @@ class LLMClient:
             headers["Authorization"] = f"Bearer {entry.api_key}"
 
         for attempt in range(_MAX_RETRIES):
+            if entry.auth == "claude-oauth":
+                return self._try_claude_oauth(entry, messages, max_tokens, is_last, stage)
             started = time.time()
             try:
                 body = {

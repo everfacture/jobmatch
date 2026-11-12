@@ -50,6 +50,7 @@ def _join_list(value: Any, fallback: str = "not specified") -> str:
 def _profile_summary(profile: dict[str, Any]) -> str:
     personal = _as_dict(profile.get("personal"))
     experience = _as_dict(profile.get("experience"))
+    compensation = _as_dict(profile.get("compensation"))
     skills = _as_dict(profile.get("skills_boundary"))
     resume_facts = _as_dict(profile.get("resume_facts"))
 
@@ -79,6 +80,9 @@ def _profile_summary(profile: dict[str, Any]) -> str:
         f"Current/recent title: {current_title}",
         f"Years of experience: {years}",
         f"Education: {education}",
+        f"Compensation expectation: {compensation.get('salary_expectation') or 'not specified'} "
+        f"{compensation.get('salary_currency') or ''}; acceptable range: "
+        f"{compensation.get('salary_range_min') or '?'}-{compensation.get('salary_range_max') or '?'}",
         f"Skills: {'; '.join(skill_bits) if skill_bits else 'not specified'}",
         f"Resume facts to respect: {'; '.join(fact_bits) if fact_bits else 'not specified'}",
     ])
@@ -89,6 +93,7 @@ def _preferences_summary(preferences: dict[str, Any] | None) -> str:
     if not prefs:
         return "No explicit scoring preferences configured. Judge fit from the resume/profile and the job posting."
 
+    candidate = _as_dict((preferences or {}).get("candidate"))
     hard_caps = []
     for cap in prefs.get("hard_caps", []) or []:
         if isinstance(cap, dict):
@@ -98,6 +103,10 @@ def _preferences_summary(preferences: dict[str, Any] | None) -> str:
             hard_caps.append(f"{name}: max {max_score} when matching {patterns}")
 
     return "\n".join([
+        f"Candidate direction: {candidate.get('headline') or 'not specified'}",
+        f"Target seniority: {_join_list(candidate.get('target_seniority'))}",
+        f"Personality/work-style evidence: {_join_list(candidate.get('personality_fit'))}",
+        f"Growth goals: {_join_list(candidate.get('growth_goals'))}",
         f"Target roles: {_join_list(prefs.get('target_roles'))}",
         f"Adjacent roles: {_join_list(prefs.get('adjacent_roles'))}",
         f"Rejected roles: {_join_list(prefs.get('reject_roles'))}",
@@ -172,13 +181,15 @@ def score_job(
     # Ambiguous roles still go to the LLM.
     rule_result = score_by_rules(job, preferences)
     if rule_result is not None:
+        rule_result = apply_score_adjustments(rule_result, job, preferences)
         rule_result["url"] = job.get("url", "")
         return rule_result
 
     job_text = (
         f"TITLE: {job['title']}\n"
         f"COMPANY: {job.get('company', '')}\n"
-        f"LOCATION: {job.get('location', 'N/A')}\n\n"
+        f"LOCATION: {job.get('location', 'N/A')}\n"
+        f"SALARY: {job.get('salary') or 'Not disclosed'}\n\n"
         f"DESCRIPTION:\n{(job.get('full_description') or '')[:6000]}"
     )
 

@@ -64,6 +64,13 @@ def _role_match(title: str, roles: list[str]) -> str | None:
     return None
 
 
+def _cap_haystack(job: dict, cap: dict) -> str:
+    """Body by default. ``scope: title`` ignores other jobs named in a multi-role ad."""
+    if str(cap.get("scope") or "").strip().lower() == "title":
+        return _clean(job.get("title"))
+    return _job_text(job)
+
+
 def _hard_caps(prefs: dict[str, Any]) -> list[dict[str, Any]]:
     caps = prefs.get("hard_caps")
     return caps if isinstance(caps, list) else []
@@ -78,12 +85,11 @@ def apply_configured_hard_caps(result: dict, job: dict, preferences: dict[str, A
     if not prefs:
         return result
 
-    text = _job_text(job)
     for cap in _hard_caps(prefs):
         if not isinstance(cap, dict):
             continue
         patterns = _items(cap.get("patterns"))
-        matched = _matched_phrases(text, patterns)
+        matched = _matched_phrases(_cap_haystack(job, cap), patterns)
         if not matched:
             continue
         try:
@@ -149,10 +155,57 @@ def apply_location_boosts(result: dict, job: dict, preferences: dict[str, Any] |
     return adjusted
 
 
+def _required_signal_caps(prefs: dict[str, Any]) -> list[dict[str, Any]]:
+    caps = prefs.get("required_signal_caps")
+    return caps if isinstance(caps, list) else []
+
+
+def apply_required_signal_caps(result: dict, job: dict, preferences: dict[str, Any] | None) -> dict:
+    """Cap specialised-lane scores when a posting lacks required lane evidence.
+
+    A candidate can be broadly qualified for an admin role while the posting
+    belongs to a specialised lane (hands-on creative work, for example). When
+    the profile declares required signals for a lane, a posting carrying none of
+    them is not evidence of a lane match, so the score is capped even when the
+    LLM found the candidate generally suitable.
+    """
+    score = result.get("score")
+    if score is None:
+        return result
+    prefs = scoring_preferences(preferences)
+    if not prefs:
+        return result
+
+    text = _job_text(job)
+    for cap in _required_signal_caps(prefs):
+        if not isinstance(cap, dict):
+            continue
+        patterns = _items(cap.get("patterns"))
+        if not patterns:
+            continue
+        if _matched_phrases(text, patterns):
+            # The posting does carry the required lane evidence; leave it alone.
+            continue
+        try:
+            max_score = int(cap.get("max_score", score))
+        except (TypeError, ValueError):
+            continue
+        if score <= max_score:
+            continue
+        capped = dict(result)
+        capped["score"] = max(1, min(10, max_score))
+        cap_name = cap.get("name") or ", ".join(patterns[:2])
+        note = f"lacks '{cap_name}' evidence"
+        capped["gap"] = (str(capped.get("gap", "")).strip() + f" [{note}]").strip()
+        return capped
+    return result
+
+
 def apply_score_adjustments(result: dict, job: dict, preferences: dict[str, Any] | None) -> dict:
     """Apply post-scoring preference adjustments in safe order."""
     capped = apply_configured_hard_caps(result, job, preferences)
-    return apply_location_boosts(capped, job, preferences)
+    lane_capped = apply_required_signal_caps(capped, job, preferences)
+    return apply_location_boosts(lane_capped, job, preferences)
 
 
 def _job_text(job: dict) -> str:
@@ -211,7 +264,7 @@ def score_by_rules(job: dict, preferences: dict[str, Any] | None = None) -> dict
         if not isinstance(cap, dict):
             continue
         patterns = _items(cap.get("patterns"))
-        matched = _matched_phrases(text, patterns)
+        matched = _matched_phrases(_cap_haystack(job, cap), patterns)
         if not matched:
             continue
         try:

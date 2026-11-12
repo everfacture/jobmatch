@@ -59,3 +59,32 @@ def test_score_job_uses_rule_gate_without_llm():
     assert result["score"] >= 8
     assert result["url"] == "https://example.test/job"
     assert result["scoring_method"] == "rule:target_role_match"
+
+
+def test_score_job_applies_adjustments_to_rule_scored_result():
+    preferences = {
+        "scoring": {
+            "target_roles": ["Administrative Assistant"],
+            "positive_signals": ["administration", "filing", "customer service"],
+            "required_signal_caps": [
+                {
+                    "name": "hands-on creative work",
+                    "patterns": ["florist", "packing", "membungkus", "display produk"],
+                    "max_score": 6,
+                }
+            ],
+        }
+    }
+    job = {
+        "title": "Administrative Assistant",
+        "company": "Generic Co",
+        "location": "Jakarta, Indonesia",
+        "full_description": "Administration, filing, and customer service support.",
+        "url": "https://example.test/admin",
+    }
+
+    result = score_job("Administrative resume", job, profile={}, preferences=preferences)
+
+    assert result["scoring_method"] == "rule:target_role_match"
+    assert result["score"] == 6
+    assert "lacks 'hands-on creative work' evidence" in result["gap"]
