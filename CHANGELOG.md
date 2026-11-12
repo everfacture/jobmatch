@@ -4,11 +4,12 @@ All notable public changes to JobMatch.
 
 ## Unreleased
 
+- Removed the Workday employer crawl and the split-discovery (`JOBMATCH_DISCOVERY_PARTS`) mode. One sequential run per profile replaces them; the run lock already prevents overlap.
+- `jobmatch prune --dry-run` no longer expires old active rows as a side effect; a dry run now changes nothing.
 - Scoring writes each result to the database as it lands instead of buffering every result to the end of the stage. A run killed mid-stage (cron timeout, SIGTERM) now keeps the scores it already paid for; before, a 58-minute run that was killed at the write step lost 1,361 scored jobs.
 - Removed the resume-tailoring, cover-letter and apply-pack stages (`run tailor|cover|apply`, `--with-resume`, `--validation`), their validator, 12 unused `jobs` columns, and the Chrome/CapSolver plumbing they needed. They had never produced a row in a live database. Existing databases keep the old columns; new ones are not created.
 - Removed the Dealls extractor (its job pages 404 on enrichment: 319 of 374 rows ever) and the Apify-backed Glints/Bayt/Naukri Gulf/GulfTalent/JobStreet stubs. Live custom extractors are Telegram Bali and HHRMA Bali.
 - `sites.yaml` now holds only `base_urls`; the unused site/blocklist registry is gone.
-- `WORKDAY_ENABLED=false` in `.env` skips the Workday employer crawl. Profiles that search one region have no use for a global corporate crawl that costs minutes per run.
 - A pipeline run left in `running` by a killed process is closed as `aborted` when the next run starts, so the run table no longer accumulates runs that look alive.
 - Discovery opens a LinkedIn job page only for results that are new and pass the location and title filters. Before, every result's page was fetched first, and on a mature profile 99.7% of those were already known or filtered. Live: about 12 s per search instead of about 40 s.
 - Missing values from JobSpy are stored as NULL instead of the text "None". Enrichment had been re-checking every such row on each run; enrich on a 60k-row database went from 637 s to 3.6 s.

@@ -568,34 +568,6 @@ def _full_crawl(
                 "tier": q.get("tier", 0),
             })
 
-    total_searches = len(searches)
-
-    # Optional chunking for cron reliability. Hermes cron jobs have bounded
-    # runtime; splitting the daily search matrix across several cron ticks is
-    # simpler and safer than one giant crawl. 1-based index for shell clarity:
-    #   JOBMATCH_DISCOVERY_PARTS=4 JOBMATCH_DISCOVERY_PART=1 ... run discover
-    parts_raw = os.environ.get("JOBMATCH_DISCOVERY_PARTS", "").strip()
-    part_raw = os.environ.get("JOBMATCH_DISCOVERY_PART", "").strip()
-    if parts_raw or part_raw:
-        try:
-            parts = int(parts_raw or "1")
-            part = int(part_raw or "1")
-        except ValueError as e:
-            raise ValueError("JOBMATCH_DISCOVERY_PARTS and JOBMATCH_DISCOVERY_PART must be integers") from e
-
-        if parts < 1:
-            raise ValueError("JOBMATCH_DISCOVERY_PARTS must be >= 1")
-        if part < 1 or part > parts:
-            raise ValueError("JOBMATCH_DISCOVERY_PART must be between 1 and JOBMATCH_DISCOVERY_PARTS")
-
-        # Deterministic round-robin keeps each part balanced even if query
-        # ordering changes. Across all parts, every combo is covered once.
-        searches = [s for idx, s in enumerate(searches) if idx % parts == (part - 1)]
-        log.info(
-            "Discovery chunk: part %d/%d -> %d/%d search combinations",
-            part, parts, len(searches), total_searches,
-        )
-
     proxy_config = proxy if isinstance(proxy, dict) else (parse_proxy(proxy) if proxy else None)
     country_indeed_map = search_cfg.get("country_indeed_map", {})
 
@@ -642,7 +614,6 @@ def _full_crawl(
         "errors": total_errors,
         "db_total": db_total,
         "queries": len(searches),
-        "total_queries": total_searches,
     }
 
 

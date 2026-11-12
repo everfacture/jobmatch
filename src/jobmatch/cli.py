@@ -205,8 +205,8 @@ def run(
 
     # Some scraper libraries can leave non-daemon background threads alive after
     # the useful work has finished. Cron cares about process exit, not vibes.
-    # Opt-in hard exit after run keeps discovery chunks from timing out after
-    # they have already written results and closed the pipeline_run cleanly.
+    # Opt-in hard exit after run keeps a cron run from hanging after it has
+    # already written results and closed the pipeline_run cleanly.
     if os.environ.get("JOBMATCH_EXIT_AFTER_RUN", "").lower() in ("1", "true", "yes"):
         import sys
         sys.stdout.flush()

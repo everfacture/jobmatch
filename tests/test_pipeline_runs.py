@@ -1,4 +1,4 @@
-"""pipeline_runs bookkeeping and discovery kill-switches."""
+"""pipeline_runs bookkeeping."""
 
 import importlib
 
@@ -38,15 +38,3 @@ def test_new_run_closes_orphaned_running_rows(db, tmp_path):
         "SELECT status FROM pipeline_runs WHERE id = ?", (fresh,)
     ).fetchone()[0] == "ok"
 
-
-def test_workday_disabled_by_env_makes_no_requests(monkeypatch):
-    from jobmatch.discovery import workday
-
-    monkeypatch.setenv("WORKDAY_ENABLED", "false")
-
-    def boom(*args, **kwargs):
-        raise AssertionError("Workday must not load config or hit the network when disabled")
-
-    monkeypatch.setattr(workday, "load_employers", boom)
-    monkeypatch.setattr(workday.config, "load_search_config", boom)
-    assert workday.run_workday_discovery() == {"found": 0, "new": 0, "existing": 0, "queries": 0}

@@ -1,7 +1,6 @@
 # Base URLs for resolving relative links that some boards return.
 # Discovery sources themselves are registered in code:
 #   - job boards: python-jobspy (searches.yaml `boards`)
-#   - employer career sites: discovery/workday.py (employers.yaml)
 #   - custom extractors: discovery/smartextract.py (register_extractor)
 base_urls:
   "RemoteOK": "https://remoteok.com"

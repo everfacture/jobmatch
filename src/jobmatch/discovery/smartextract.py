@@ -605,7 +605,7 @@ def _store_jobs_filtered(
             filtered += 1
             continue
         try:
-            # Some sources (Telegram, Workday) report a posting date. Persist it
+            # Some sources (Telegram, HHRMA) report a posting date. Persist it
             # when the schema has the column: it is the freshness signal, and
             # without it staleness cannot be judged downstream. Guarded because
             # a bare jobs table (older DBs, minimal test fixtures) may lack it.

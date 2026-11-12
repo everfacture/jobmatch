@@ -640,11 +640,12 @@ def prune_jobs(days: int = 14, statuses: tuple[str, ...] = ("low_score", "duplic
 
     When expire_active is true, old active jobs are first marked expired so
     stale unavailable postings are removed by the same retention policy.
+    A dry run changes nothing, including that expiry step.
     """
     if conn is None:
         conn = get_connection()
     cutoff = f"-{days} days"
-    if expire_active:
+    if expire_active and not dry_run:
         conn.execute(
             """
             UPDATE jobs

@@ -46,7 +46,7 @@ console = Console()
 STAGE_ORDER = ("discover", "enrich", "score", "dedup")
 
 STAGE_META: dict[str, dict] = {
-    "discover": {"desc": "Job discovery (JobSpy + Workday + smart extract)"},
+    "discover": {"desc": "Job discovery (job boards + custom extractors)"},
     "enrich":   {"desc": "Detail enrichment (full descriptions + apply URLs)"},
     "score":    {"desc": "Hybrid scoring: deterministic rules first, LLM for ambiguous jobs"},
     "dedup":    {"desc": "Deduplicate scored jobs (keep highest score per role)"},
@@ -88,26 +88,9 @@ def _run_stage(name: str, **kwargs: object) -> dict:
 
 
 def _run_discover(workers: int = 1) -> dict:
-    """Stage: Job discovery — JobSpy, Workday, and smart-extract scrapers.
+    """Stage: Job discovery — JobSpy boards, then the custom extractors."""
+    stats: dict = {"jobspy": None, "smartextract": None}
 
-    Supports cron chunking via:
-        JOBMATCH_DISCOVERY_PARTS=4
-        JOBMATCH_DISCOVERY_PART=1..4
-
-    In chunked mode, JobSpy runs every part, while Workday and SmartExtract run
-    only on the final part to avoid repeated non-matrix discovery work.
-    """
-    stats: dict = {"jobspy": None, "workday": None, "smartextract": None}
-
-    parts = int(os.environ.get("JOBMATCH_DISCOVERY_PARTS", "1") or "1")
-    part = int(os.environ.get("JOBMATCH_DISCOVERY_PART", "1") or "1")
-    chunked = parts > 1
-    final_chunk = (not chunked) or part == parts
-
-    if chunked:
-        console.print(f"  [cyan]Discovery chunk {part}/{parts}[/cyan]")
-
-    # JobSpy
     console.print("  [cyan]JobSpy crawl...[/cyan]")
     try:
         from jobmatch.discovery.jobspy import run_discovery
@@ -117,25 +100,7 @@ def _run_discover(workers: int = 1) -> dict:
         console.print(f"  [red]JobSpy error:[/red] {e}")
         stats["jobspy"] = f"error: {e}"
 
-    if chunked and not final_chunk:
-        console.print("  [yellow]Skipping Workday + SmartExtract until final discovery chunk[/yellow]")
-        stats["workday"] = "skipped: chunked discovery non-final part"
-        stats["smartextract"] = "skipped: chunked discovery non-final part"
-        return stats
-
-    # Workday corporate scraper
-    console.print("  [cyan]Workday corporate scraper...[/cyan]")
-    try:
-        from jobmatch.discovery.workday import run_workday_discovery
-        run_workday_discovery(workers=workers)
-        stats["workday"] = "ok"
-    except Exception as e:
-        log.error("Workday scraper failed: %s", e)
-        console.print(f"  [red]Workday error:[/red] {e}")
-        stats["workday"] = f"error: {e}"
-
-    # Smart extract
-    console.print("  [cyan]Smart extract (AI-powered scraping)...[/cyan]")
+    console.print("  [cyan]Custom extractors...[/cyan]")
     try:
         from jobmatch.discovery.smartextract import run_smart_extract
         run_smart_extract(workers=workers)
